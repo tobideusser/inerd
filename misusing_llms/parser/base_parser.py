@@ -5,8 +5,8 @@ from inspect import signature
 
 class BaseParser(ABC):
     PARSER = {
-        "conll2003": "wimp.parser.conll2003_huggingface_parser.CoNLL2003HuggingFaceParser",
-        "CoNLL-2003": "wimp.parser.conll2003_huggingface_parser.CoNLL2003HuggingFaceParser",
+        "conll2003": "misusing_llms.parser.conll2003_huggingface_parser.CoNLL2003HuggingFaceParser",
+        "CoNLL-2003": "misusing_llms.parser.conll2003_huggingface_parser.CoNLL2003HuggingFaceParser",
     }
 
     @abstractmethod

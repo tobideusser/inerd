@@ -1,5 +1,5 @@
 # Base directory to store all task outputs
-base_dir: "/scratch/data/wimp/conll2003_dev"
+base_dir: "/scratch/data/misusing_llms/conll2003_dev"
 seed: &seed 3141
 
 ###########
@@ -20,7 +20,7 @@ Tokenisation:
   # english: "bert-base-cased"
   # multilingual: "bert-base-multilingual-cased"
   # "ahmedrachid/FinancialBERT"
-  tokeniser_name: &modelname  # "bert-base-uncased" **checking with this tokenizer 'bert-base-german-dbmdz-cased'
+  tokeniser_name: &modelname "facebook/opt-125m"
   special_tokens: null
 #    additional_special_tokens : [['[NUM]']] ** it was giving error with this argument
 

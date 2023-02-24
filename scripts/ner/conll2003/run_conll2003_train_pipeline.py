@@ -8,7 +8,7 @@ from fluidml import Flow
 from fluidml.flow import TaskSpec
 
 from misusing_llms import project_path
-from misusing_llms.tasks import Parsing, Tokenisation, Preprocessing, Training
+from misusing_llms.tasks import Parsing, Tokenisation  # , Preprocessing, Training
 from misusing_llms.utils.fluid_helper import (
     configure_logging,
     MyLocalFileStore,
@@ -23,7 +23,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--config",
-        default=os.path.join(project_path, "scripts", "conll2003", "config.yaml"),
+        default=os.path.join(project_path, "scripts", "ner", "conll2003", "config.yaml"),
         type=str,
         help="Path to config",
     )
@@ -80,8 +80,8 @@ def main():
     # get task configs
     data_parsing_cfg = config["Parsing"]
     tokenisation_cfg = config["Tokenisation"]
-    preprocessing_cfg = config["Preprocessing"]
-    training_cfg = config["Training"]
+    # preprocessing_cfg = config["Preprocessing"]
+    # training_cfg = config["Training"]
     # training_additional_kwargs = {
     #     "checkpointer_params": {
     #         "serialization_dir": "models",
@@ -97,21 +97,26 @@ def main():
     # create all task specs
     parsing = TaskSpec(task=Parsing, config=data_parsing_cfg)
     tokenisation = TaskSpec(task=Tokenisation, config=tokenisation_cfg)
-    preprocessing = TaskSpec(task=Preprocessing, config=preprocessing_cfg)
-    training = TaskSpec(
-        task=Training,
-        config=training_cfg,
-        expand=gs_expansion_method,
-        # additional_kwargs=training_additional_kwargs,
-    )
+    # preprocessing = TaskSpec(task=Preprocessing, config=preprocessing_cfg)
+    # training = TaskSpec(
+    #     task=Training,
+    #     config=training_cfg,
+    #     expand=gs_expansion_method,
+    #     # additional_kwargs=training_additional_kwargs,
+    # )
 
     # dependencies between tasks
     tokenisation.requires(parsing)
-    preprocessing.requires(tokenisation)
-    training.requires(preprocessing, tokenisation)
+    # preprocessing.requires(tokenisation)
+    # training.requires(preprocessing, tokenisation)
 
     # list of all tasks
-    tasks = [parsing, tokenisation, preprocessing, training]
+    tasks = [
+        parsing,
+        tokenisation,
+        # preprocessing,
+        # training
+    ]
 
     # create list of resources
     devices = get_balanced_devices(count=num_workers, use_cuda=use_cuda, cuda_ids=cuda_ids)

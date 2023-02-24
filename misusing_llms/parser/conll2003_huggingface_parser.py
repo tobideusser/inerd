@@ -12,7 +12,7 @@ class CoNLL2003HuggingFaceParser(BaseParser):
         self.dataset_name = dataset_name if dataset_name else "CoNLL2003"
         self.debug_size = debug_size
 
-    def parse(self) -> Corpus:
+    def parse(self) -> NERCorpus:
         dataset = load_dataset("conll2003")
         corpus = {"train": [], "validation": [], "test": []}
         # source: https://huggingface.co/datasets/conll2003
@@ -43,7 +43,7 @@ class CoNLL2003HuggingFaceParser(BaseParser):
                 )
                 if self.debug_size and i >= self.debug_size - 1:
                     break
-        corpus_parsed = Corpus(
+        corpus_parsed = NERCorpus(
             train=corpus["train"],
             validation=corpus["validation"],
             test=corpus["test"],
