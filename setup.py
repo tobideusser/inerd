@@ -15,5 +15,6 @@ setup(
         "tqdm",
         "transformers",
         "wandb",
-    ]
+        "pyyaml",
+    ],
 )
