@@ -1,0 +1,98 @@
+# Base directory to store all task outputs
+base_dir: "/scratch/data/wimp/conll2003_dev"
+seed: &seed 3141
+
+###########
+# Parsing #
+###########
+
+Parsing:
+  dataset: "CoNLL-2003"
+  path_to_data_folders: null
+  dataset_name: "CoNLL-2003"
+  debug_size: 10
+
+################
+# Tokenisation #
+################
+
+Tokenisation:
+  # english: "bert-base-cased"
+  # multilingual: "bert-base-multilingual-cased"
+  # "ahmedrachid/FinancialBERT"
+  tokeniser_name: &modelname  # "bert-base-uncased" **checking with this tokenizer 'bert-base-german-dbmdz-cased'
+  special_tokens: null
+#    additional_special_tokens : [['[NUM]']] ** it was giving error with this argument
+
+
+##################
+# Model Training #
+##################
+
+Training:
+
+  - seed: *seed
+
+    model_params:
+
+      encoder_params:
+        encoder_type_: "SentenceEncoder"
+        type_: *modelname
+        finetune: true
+        word_pooling: "rnn_local" # ['avg', 'rnn_local', 'attention', 'max'] # 'avg' # ['avg', 'rnn_local', 'attention' 'avg', 'max']
+        output_attentions: false
+        output_hidden_states: false
+
+      decoder_params:
+        type_: "linear"
+        dropout: 0.1
+
+    training_params:
+      optimiser:
+        type_: 'adamW'
+        lr: 1.e-3
+        weight_decay: 0.01
+
+      lr_scheduler:
+        type_: 'lin_warmup'
+        interval: 'step'
+        lr_warmup: 0.1
+
+      req_filtering:
+        min_train_blobs_per_req: 0
+        min_test_blobs_per_req: 0
+
+      trainer:
+        max_epochs: 10
+        accumulate_grad_batches: 1 # [2, 4]  # 4
+        gradient_clip_val: 1  # [1, 10]  # 10
+        precision: 32  # 16
+        amp_level: null
+        val_check_interval: 1. # 0.25  # 1.
+
+      callbacks:
+        monitor_var: 'valid-sensitivity_3_r2b_micro'
+        monitor_var_mode: 'max'
+        apply_early_stopping: false
+        patience: null
+        save_top_k: 1
+
+      metrics:
+        f1:
+          wimp: true
+#        sensitivity_3:
+#          type_: "sensitivity"
+#          top_l: 3
+#        sensitivity_5:
+#          type_: "sensitivity"
+#          top_l: 5
+#        f1:
+#          type_: "f1"
+
+      data_loading:
+        batch_size: 64
+        drop_last: false
+        sampler: 'weighted_random'
+        sampling_scheme: 'rous'  # 'ros': random over sampling OR 'rous': random over and under sampling
+        combine_train_valid: false
+        validate_on_test_set: false
