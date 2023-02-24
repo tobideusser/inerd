@@ -16,5 +16,7 @@ setup(
         "transformers",
         "wandb",
         "pyyaml",
+        "rich",
+        "numpy",
     ],
 )
