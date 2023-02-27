@@ -9,6 +9,7 @@ from misusing_llms.parser import BaseParser
 
 class CoNLL2003HuggingFaceParser(BaseParser):
     def __init__(self, debug_size: Optional[int] = None, dataset_name: Optional[str] = None):
+        super().__init__()
         self.dataset_name = dataset_name if dataset_name else "CoNLL2003"
         self.debug_size = debug_size
 
@@ -16,7 +17,7 @@ class CoNLL2003HuggingFaceParser(BaseParser):
         dataset = load_dataset("conll2003")
         corpus = {"train": [], "validation": [], "test": []}
         # source: https://huggingface.co/datasets/conll2003
-        entity_tag_to_label = {
+        self.entity_tag_to_label = {
             0: "O",
             1: "B-PER",
             2: "I-PER",
@@ -33,12 +34,14 @@ class CoNLL2003HuggingFaceParser(BaseParser):
                 desc=f"Parsing {split_type}",
                 total=self.debug_size if self.debug_size else len(dataset[split_type]),
             ):
+                entities = self._entity_tags_to_entity_dict(entity_tags=sentence["ner_tags"], words=sentence["tokens"])
                 corpus[split_type].append(
                     Sentence(
                         id_=sentence["id"],
                         words=sentence["tokens"],
                         entity_tags=sentence["ner_tags"],
-                        entity_label=[entity_tag_to_label[entity_tag] for entity_tag in sentence["ner_tags"]],
+                        entity_label=[self.entity_tag_to_label[entity_tag] for entity_tag in sentence["ner_tags"]],
+                        entities_anno=entities,
                     )
                 )
                 if self.debug_size and i >= self.debug_size - 1:
@@ -48,7 +51,7 @@ class CoNLL2003HuggingFaceParser(BaseParser):
             validation=corpus["validation"],
             test=corpus["test"],
             name=self.dataset_name,
-            entity_tag_to_label=entity_tag_to_label,
+            entity_tag_to_label=self.entity_tag_to_label,
         )
         return corpus_parsed
 

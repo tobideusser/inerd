@@ -30,6 +30,21 @@ class NamedEntityVocabulary:
 
 
 @dataclass
+class Entity:
+    start: int
+    words: List[str]
+    type_: str
+    end: Optional[int] = None
+
+    @classmethod
+    def from_dict(cls, d: Dict):
+        return cls(**d)
+
+    def to_dict(self) -> Dict:
+        return self.__dict__
+
+
+@dataclass
 class Sentence:
     words: List[str]
     entity_tags: List[int]
@@ -44,12 +59,12 @@ class Sentence:
     word2token_end_ids: Optional[List[int]] = None
 
     entity_iobes: Optional[List[str]] = None
+    entities_anno: Optional[List[Entity]] = None
+    entity_string_tokens: Optional[List[str]] = None
+    entity_string_token_ids: Optional[List[str]] = None
 
-    wimp_score: Optional[List[float]] = None
-    wimp_attention_score: Optional[List[float]] = None
-    wimp_mlm_score: Optional[List[float]] = None
-    wimp_attention_score_type: Optional[str] = None
     _content: Optional[str] = None
+    _entity_string: Optional[str] = None
 
     def __len__(self):
         return len(self.words)
@@ -60,12 +75,27 @@ class Sentence:
             self._content = " ".join(self.words)
         return self._content
 
+    @property
+    def entity_string(self) -> str:
+        if not self._entity_string:
+            s = ""
+            for entity in self.entities_anno:
+                s += entity.type_ + ": " + " ".join(entity.words) + "; "
+            if len(s) > 0:
+                s = s[:-1]
+            self._entity_string = s
+        return self._entity_string
+
     @classmethod
     def from_dict(cls, d: Dict):
+        d["entities_anno"] = [Entity.from_dict(entity) for entity in d["entities_anno"]]
         return cls(**d)
 
     def to_dict(self) -> Dict:
-        return self.__dict__
+        d = self.__dict__
+        if self.entities_anno:
+            d["entities_anno"] = [entity.to_dict() for entity in self.entities_anno]
+        return d
 
 
 @dataclass
