@@ -23,10 +23,16 @@ class GenerativeNERModel(pl.LightningModule):
         self.lr_scheduler_params = lr_scheduler_params
         pass
 
+    def forward(self, input_ids) -> Dict:
+        return self.model.generate(input_ids=input_ids, num_beams=1, do_sample=False)  # greedy decoding for now
+
+    def training_step(self, batch: Dict, batch_idx: int) -> Dict:
+        return self.forward(batch)
+
     def configure_optimisers(self):
         optimiser = Optimiser.from_config(params=self.parameters(), **self.optimiser_params)
         self.trainer.reset_train_dataloader(self)
-        scheduler = None
+
         if self.lr_scheduler_params is not None:
             total_devices = self.trainer.num_devices * self.trainer.num_nodes
             train_batches = len(self.trainer.train_dataloader) // total_devices
@@ -48,7 +54,6 @@ class GenerativeNERModel(pl.LightningModule):
                 "monitor": "loss",
             }
 
-        if scheduler:
             return [optimiser], [scheduler]
         else:
             return optimiser
