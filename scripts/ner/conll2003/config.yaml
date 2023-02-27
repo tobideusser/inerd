@@ -35,17 +35,7 @@ Training:
 
     model_params:
 
-      encoder_params:
-        encoder_type_: "SentenceEncoder"
-        type_: *modelname
-        finetune: true
-        word_pooling: "rnn_local" # ['avg', 'rnn_local', 'attention', 'max'] # 'avg' # ['avg', 'rnn_local', 'attention' 'avg', 'max']
-        output_attentions: false
-        output_hidden_states: false
-
-      decoder_params:
-        type_: "linear"
-        dropout: 0.1
+      model_name: *modelname
 
     training_params:
       optimiser:
