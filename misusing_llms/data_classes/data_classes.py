@@ -86,6 +86,10 @@ class Sentence:
             self._entity_string = s
         return self._entity_string
 
+    @property
+    def num_tokens(self) -> int:
+        return len(self.token_ids)
+
     @classmethod
     def from_dict(cls, d: Dict):
         d["entities_anno"] = [Entity.from_dict(entity) for entity in d["entities_anno"]]
