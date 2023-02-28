@@ -33,6 +33,9 @@ Training:
 
   - seed: *seed
 
+    wandb_logging: true
+    tensorboard_logging: false
+
     model_params:
 
       model_name: *modelname
@@ -47,10 +50,6 @@ Training:
         type_: 'lin_warmup'
         interval: 'step'
         lr_warmup: 0.1
-
-      req_filtering:
-        min_train_blobs_per_req: 0
-        min_test_blobs_per_req: 0
 
       trainer:
         max_epochs: 10
@@ -82,7 +81,5 @@ Training:
       data_loading:
         batch_size: 64
         drop_last: false
-        sampler: 'weighted_random'
-        sampling_scheme: 'rous'  # 'ros': random over sampling OR 'rous': random over and under sampling
         combine_train_valid: false
         validate_on_test_set: false

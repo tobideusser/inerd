@@ -1,15 +1,12 @@
-from copy import deepcopy
 import logging
-from typing import List, Tuple, Dict, Optional, Union
+from typing import Dict, Optional, Union
 
 from fluidml.common import Task
-from transformers import AutoTokenizer
 from tqdm import tqdm
-import torch
+from transformers import AutoTokenizer
 
 from misusing_llms.data_classes import NERCorpus
 from misusing_llms.utils.utils import set_seed_number, set_seeds
-
 
 logger = logging.getLogger(__name__)
 

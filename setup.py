@@ -18,5 +18,6 @@ setup(
         "pyyaml",
         "rich",
         "numpy",
+        "markdown",
     ],
 )
