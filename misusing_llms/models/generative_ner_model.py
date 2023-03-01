@@ -24,11 +24,15 @@ class GenerativeNERModel(pl.LightningModule):
         if evaluator_params is not None:
             self.evaluator = Evaluator.from_config(**evaluator_params)
 
-    def forward(self, input_ids) -> Dict:
-        return self.model.generate(input_ids=input_ids, num_beams=1, do_sample=False)  # greedy decoding for now
+    def generate(self, batch) -> Dict:
+        return self.model.generate(input_ids=batch, num_beams=1, do_sample=False)  # greedy decoding for now
 
     def training_step(self, batch: Dict, batch_idx: int) -> Dict:
         return self.forward(batch)
+
+    def forward(self, batch) -> Dict:
+        model_output = self.model(input_ids=batch["input_ids"], labels=batch["labels"])
+        return batch
 
     def configure_optimizers(self):
         optimiser = Optimiser.from_config(params=self.parameters(), **self.optimiser_params)

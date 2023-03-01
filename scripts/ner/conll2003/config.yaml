@@ -70,7 +70,7 @@ Training:
         nerf1: null
 
       data_loading:
-        batch_size: 64
+        batch_size: 1
         drop_last: false
         combine_train_valid: false
         validate_on_test_set: false
