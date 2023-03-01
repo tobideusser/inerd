@@ -8,7 +8,7 @@ from fluidml import Flow
 from fluidml.flow import TaskSpec
 
 from misusing_llms import project_path
-from misusing_llms.tasks import Parsing, Tokenisation  # , Preprocessing, Training
+from misusing_llms.tasks import Parsing, Tokenisation, NERTraining
 from misusing_llms.utils.fluid_helper import (
     configure_logging,
     MyLocalFileStore,
@@ -53,7 +53,7 @@ def parse_args() -> argparse.Namespace:
         help="Method to expand config for grid search",
     )
     parser.add_argument("--log-to-tmux", action="store_true", help="Log to several tmux panes.")
-    parser.add_argument("--project-name", type=str, default="WImp", help="Name of project.")
+    parser.add_argument("--project-name", type=str, default="misusing-llms", help="Name of project.")
     parser.add_argument("--run-name", type=str, default=None, help="Name of run.")
     return parser.parse_args()
 
@@ -81,7 +81,7 @@ def main():
     data_parsing_cfg = config["Parsing"]
     tokenisation_cfg = config["Tokenisation"]
     # preprocessing_cfg = config["Preprocessing"]
-    # training_cfg = config["Training"]
+    training_cfg = config["Training"]
     # training_additional_kwargs = {
     #     "checkpointer_params": {
     #         "serialization_dir": "models",
@@ -98,24 +98,24 @@ def main():
     parsing = TaskSpec(task=Parsing, config=data_parsing_cfg)
     tokenisation = TaskSpec(task=Tokenisation, config=tokenisation_cfg)
     # preprocessing = TaskSpec(task=Preprocessing, config=preprocessing_cfg)
-    # training = TaskSpec(
-    #     task=Training,
-    #     config=training_cfg,
-    #     expand=gs_expansion_method,
-    #     # additional_kwargs=training_additional_kwargs,
-    # )
+    training = TaskSpec(
+        task=NERTraining,
+        config=training_cfg,
+        expand=gs_expansion_method,
+        # additional_kwargs=training_additional_kwargs,
+    )
 
     # dependencies between tasks
     tokenisation.requires(parsing)
     # preprocessing.requires(tokenisation)
-    # training.requires(preprocessing, tokenisation)
+    training.requires(tokenisation)
 
     # list of all tasks
     tasks = [
         parsing,
         tokenisation,
         # preprocessing,
-        # training
+        training,
     ]
 
     # create list of resources

@@ -1,6 +1,8 @@
 from abc import ABC, abstractmethod
 from typing import Dict, Any, List, Optional, Union, Tuple
 
+import numpy as np
+
 
 class Metric(ABC):
     def __init__(self, name: str):
@@ -13,7 +15,7 @@ class Metric(ABC):
         except KeyError:
             raise KeyError(f'Metric "{type_}" is not implemented.')
 
-        return class_(*args, **kwargs)
+        return class_(name=type_, *args, **kwargs)
 
     @abstractmethod
     def update(self, *args, **kwargs):
@@ -46,7 +48,7 @@ class NERF1(Metric):
         self.gt_entities: List[List[Dict]] = []
         self.entity_types: Optional[List[str]] = None
 
-    def __call__(self, entities_anno: List[List[Dict]], entities_pred: List[Dict], entity_types: List[str]):
+    def update(self, entities_anno: List[List[Dict]], entities_pred: List[Dict], entity_types: List[str]):
         """Evaluate NER predictions
         Args:
             pred_entities (list) :  list of list of predicted entities (several entities in each sentence)
@@ -68,7 +70,7 @@ class NERF1(Metric):
             ]
         )
 
-    def get_metric(self, reset: bool = False):
+    def compute(self, reset: bool = False):
         assert len(self.pred_entities) == len(self.gt_entities)
 
         statistics = {ent: {"tp": 0, "fp": 0, "fn": 0, "support": 0} for ent in self.entity_types}
@@ -158,4 +160,4 @@ class NERF1(Metric):
         self.gt_entities = []
 
 
-METRICS = {"NERF1": NERF1}
+METRICS = {"nerf1": NERF1}

@@ -23,7 +23,11 @@ class Tokenisation(Task):
 
         # config params
         self.special_tokens = special_tokens
-        self.tokeniser_name = tokeniser_name
+        if "facebook/opt" in tokeniser_name:
+            logger.info("Using GPT-2 *fast* tokeniser instead of the default slow tokeniser specified for OPT models.")
+            self.tokeniser_name = "gpt2"
+        else:
+            self.tokeniser_name = tokeniser_name
         self.seed = seed
 
         self.train_mode = train_mode
@@ -53,7 +57,7 @@ class Tokenisation(Task):
         else:
             corpus = corpus_parsed
 
-        logger.debug("Sub-word-tokenise corpus and calculate word to token alignment masks...")
+        logger.debug("Tokenise corpus...")
         corpus_tokenised = self._tokenise_corpus(corpus)
 
         if self.train_mode:

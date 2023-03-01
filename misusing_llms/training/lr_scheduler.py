@@ -11,7 +11,7 @@ LR_SCHEDULERS = {
 
 class LearningRateScheduler:
     @classmethod
-    def from_config(cls, type_: str, optimizer: torch.optim.Optimizer, **kwargs):
+    def from_config(cls, type_: str, optimiser: torch.optim.Optimizer, **kwargs):
         try:
             callable_path = LR_SCHEDULERS[type_]
         except KeyError:
@@ -24,4 +24,4 @@ class LearningRateScheduler:
         expected_scheduler_args = inspect.signature(class_).parameters.keys()
         scheduler_kwargs = {name: value for name, value in kwargs.items() if name in expected_scheduler_args}
 
-        return class_(optimizer=optimizer, **scheduler_kwargs)
+        return class_(optimizer=optimiser, **scheduler_kwargs)

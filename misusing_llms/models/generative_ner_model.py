@@ -3,7 +3,7 @@ from typing import Dict, Optional
 import pytorch_lightning as pl
 from transformers import AutoModelForCausalLM
 
-from misusing_llms.training import Optimiser, LearningRateScheduler
+from misusing_llms.training import Optimiser, LearningRateScheduler, Evaluator
 
 
 class GenerativeNERModel(pl.LightningModule):
@@ -21,7 +21,8 @@ class GenerativeNERModel(pl.LightningModule):
 
         self.optimiser_params = optimiser_params
         self.lr_scheduler_params = lr_scheduler_params
-        pass
+        if evaluator_params is not None:
+            self.evaluator = Evaluator.from_config(**evaluator_params)
 
     def forward(self, input_ids) -> Dict:
         return self.model.generate(input_ids=input_ids, num_beams=1, do_sample=False)  # greedy decoding for now
@@ -29,7 +30,7 @@ class GenerativeNERModel(pl.LightningModule):
     def training_step(self, batch: Dict, batch_idx: int) -> Dict:
         return self.forward(batch)
 
-    def configure_optimisers(self):
+    def configure_optimizers(self):
         optimiser = Optimiser.from_config(params=self.parameters(), **self.optimiser_params)
         self.trainer.reset_train_dataloader(self)
 

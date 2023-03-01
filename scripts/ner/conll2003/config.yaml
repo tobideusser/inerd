@@ -67,16 +67,7 @@ Training:
         save_top_k: 1
 
       metrics:
-        f1:
-          wimp: true
-#        sensitivity_3:
-#          type_: "sensitivity"
-#          top_l: 3
-#        sensitivity_5:
-#          type_: "sensitivity"
-#          top_l: 5
-#        f1:
-#          type_: "f1"
+        nerf1: null
 
       data_loading:
         batch_size: 64

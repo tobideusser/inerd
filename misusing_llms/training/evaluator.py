@@ -17,7 +17,10 @@ class Evaluator:
 
         metrics = {}
         for metric_name, metric_kwargs in evaluator_params.items():
-            metrics[metric_name] = Metric.from_config(type_=metric_name, **metric_kwargs)
+            if metric_kwargs:
+                metrics[metric_name] = Metric.from_config(type_=metric_name, **metric_kwargs)
+            else:
+                metrics[metric_name] = Metric.from_config(type_=metric_name)
 
         return cls(metrics=metrics)
 
