@@ -22,6 +22,7 @@ Tokenisation:
   # "ahmedrachid/FinancialBERT"
   tokeniser_name: &modelname "facebook/opt-125m"
   special_tokens: null
+  combine_token: "\n"
 #    additional_special_tokens : [['[NUM]']] ** it was giving error with this argument
 
 

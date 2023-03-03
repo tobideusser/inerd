@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 class Tokenisation(Task):
     def __init__(
         self,
+        combine_token: str = "|",
         special_tokens: Optional[Dict] = None,
         seed: int = 3141,
         tokeniser_name: Optional[str] = None,
@@ -22,28 +23,37 @@ class Tokenisation(Task):
         super().__init__()
 
         # config params
+        self.combine_token = combine_token
         self.special_tokens = special_tokens
-        if "facebook/opt" in tokeniser_name:
-            logger.info("Using GPT-2 *fast* tokeniser instead of the default slow tokeniser specified for OPT models.")
-            self.tokeniser_name = "gpt2"
-        else:
-            self.tokeniser_name = tokeniser_name
+        self.tokeniser_name = tokeniser_name
         self.seed = seed
 
         self.train_mode = train_mode
 
         self.tokeniser = AutoTokenizer.from_pretrained(self.tokeniser_name, use_fast=True)
-        if self.special_tokens is not None:
-            self.tokeniser.add_special_tokens(self.special_tokens)
+        # if self.special_tokens is not None:
+        #     self.tokeniser.add_special_tokens(self.special_tokens)
 
     def _tokenise_corpus(self, corpus: NERCorpus) -> NERCorpus:
 
         for sentence in tqdm(corpus.sentences):
-            sentence.token_ids = self.tokeniser(sentence.content).input_ids
-            sentence.tokens = self.tokeniser.convert_ids_to_tokens(sentence.token_ids)
+            prompt_tokens = sentence.content + " " + self.combine_token
+            input_tokens = prompt_tokens + " " + sentence.entity_string
 
-            sentence.entity_string_token_ids = self.tokeniser(sentence.entity_string).input_ids
-            sentence.entity_string_tokens = self.tokeniser.convert_ids_to_tokens(sentence.entity_string_token_ids)
+            sentence.input_ids = self.tokeniser(input_tokens).input_ids
+            sentence.input_tokens = self.tokeniser.batch_decode(sentence.input_ids)
+
+            length_tokenised_prompt = len(self.tokeniser(prompt_tokens).input_ids)
+            sentence.labels = [-100] * length_tokenised_prompt + sentence.input_ids[length_tokenised_prompt:]
+
+            # sentence.token_ids = self.tokeniser(sentence.content).input_ids
+            # sentence.tokens = self.tokeniser.convert_ids_to_tokens(sentence.token_ids)
+            #
+            # sentence.entity_string_token_ids = self.tokeniser(sentence.entity_string).input_ids
+            # sentence.entity_string_tokens = self.tokeniser.convert_ids_to_tokens(sentence.entity_string_token_ids)
+            #
+            # sentence.combine_token = self.combine_token
+            # sentence.combine_token_id = self.tokeniser(self.combine_token).input_ids
 
         return corpus
 
@@ -62,6 +72,6 @@ class Tokenisation(Task):
 
         if self.train_mode:
             self.save(corpus_tokenised.to_dict(), "corpus_tokenised", type_="pickle")
-            self.save(self.tokeniser, "tokeniser", type_="tokeniser")
+            # self.save(self.tokeniser, "tokeniser", type_="tokeniser")
         else:
-            return corpus_tokenised, self.tokeniser
+            return corpus_tokenised  # , self.tokeniser

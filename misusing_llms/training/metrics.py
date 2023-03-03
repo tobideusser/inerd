@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Dict, Any, List, Optional, Union, Tuple
+from typing import Dict, Any, List, Optional, Union, Set
 
 import numpy as np
 
@@ -41,34 +41,22 @@ class Metric(ABC):
 
 
 class NERF1(Metric):
-    def __init__(self, name: str):
+    def __init__(self, name: str, entity_set: Set[str]):
         super().__init__(name=name)
 
-        self.pred_entities: List[List[Dict]] = []
-        self.gt_entities: List[List[Dict]] = []
-        self.entity_types: Optional[List[str]] = None
+        self.entity_set = entity_set
 
-    def update(self, entities_anno: List[List[Dict]], entities_pred: List[Dict], entity_types: List[str]):
-        """Evaluate NER predictions
-        Args:
-            pred_entities (list) :  list of list of predicted entities (several entities in each sentence)
-            gt_entities (list) :    list of list of ground truth entities
-                entity = {"start": start_idx (inclusive),
-                          "end": end_idx (exclusive),
-                          "type": ent_type}
-            entity_types (list):     list of entity types
-        """
-        if self.entity_types is None:
-            self.entity_types = entity_types
+        self.entity_strings: List[str] = []
+        self.entity_strings_predicted: List[str] = []
 
-        self.gt_entities.extend(entities_anno)
-        # self.pred_entities.extend(pred_entities)
-        self.pred_entities.extend(
-            [
-                [{"start": span[0], "end": span[1], "type_": ent_type} for span, ent_type in s.items()]
-                for s in entities_pred
-            ]
-        )
+        # self.pred_entities: List[List[Dict]] = []
+        # self.gt_entities: List[List[Dict]] = []
+        # self.entity_types: Optional[List[str]] = None
+
+    def update(self, entity_string: List[str], entity_string_predicted: List[str]):
+
+        self.entity_strings.extend(entity_string)
+        self.entity_strings_predicted.extend(entity_string_predicted)
 
     def compute(self, reset: bool = False):
         assert len(self.pred_entities) == len(self.gt_entities)

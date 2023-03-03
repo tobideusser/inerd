@@ -11,7 +11,7 @@ from pytorch_lightning.callbacks import (
 )
 from pytorch_lightning.loggers import TensorBoardLogger, WandbLogger
 from torch.utils.data import DataLoader
-from transformers import PreTrainedTokenizer
+from transformers import AutoTokenizer
 
 from misusing_llms.data_classes import NERCorpus
 from misusing_llms.models import GenerativeNERModel
@@ -21,6 +21,7 @@ from misusing_llms.training import (
     ProgressBar,
     ExceptionHandling,
     FluidmlCheckpointIO,
+    Evaluator,
 )
 from misusing_llms.utils.fluid_helper import log_to_file
 from misusing_llms.utils.utils import set_seeds, set_device
@@ -154,7 +155,7 @@ class NERTraining(Task):
         return callbacks
 
     @log_to_file
-    def run(self, corpus_tokenised: NERCorpus, tokeniser: PreTrainedTokenizer):
+    def run(self, corpus_tokenised: NERCorpus):
         if isinstance(corpus_tokenised, Dict):
             logger.info("Converting corpus_tokenised dict to Corpus object.")
             corpus = NERCorpus.from_dict(corpus_tokenised)
@@ -165,17 +166,26 @@ class NERTraining(Task):
         device = self.resource.device
         set_device(device)
 
+        tokeniser = AutoTokenizer.from_pretrained(self.model_params["model_name"], use_fast=True)
+
         batch_collator = NERBatchCollator(pad_token_id=tokeniser.pad_token_id)
         datasets = self._init_torch_datasets(corpus=corpus)
         dataloaders = self._init_torch_dataloaders(datasets, batch_collator)
         loggers = self._init_model_loggers()
         callbacks = self._init_model_callbacks()
 
+        if self.training_params.get("metrics", False):
+            evaluator = Evaluator.from_config(entity_set=corpus.entity_set, **self.training_params["metrics"])
+        else:
+            evaluator = None
+
         model = GenerativeNERModel(
             model_params=self.model_params,
             optimiser_params=self.training_params["optimiser"],
             lr_scheduler_params=self.training_params.get("lr_scheduler", None),
-            evaluator_params=self.training_params["metrics"],
+            # evaluator_params=self.training_params["metrics"],
+            evaluator=evaluator,
+            tokeniser=tokeniser,
         ).to(device)
 
         try:

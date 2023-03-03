@@ -1,7 +1,8 @@
-from typing import Dict, Optional
+from typing import Dict, Optional, List
 
 import pytorch_lightning as pl
-from transformers import AutoModelForCausalLM
+import torch
+from transformers import AutoModelForCausalLM, PreTrainedTokenizerFast
 
 from misusing_llms.training import Optimiser, LearningRateScheduler, Evaluator
 
@@ -10,29 +11,69 @@ class GenerativeNERModel(pl.LightningModule):
     def __init__(
         self,
         model_params: Dict,
+        tokeniser: PreTrainedTokenizerFast,
         optimiser_params: Optional[Dict] = None,
         lr_scheduler_params: Optional[Dict] = None,
         evaluator_params: Optional[Dict] = None,
+        evaluator: Optional[Evaluator] = None,
     ):
         super().__init__()
 
         model_name = model_params.pop("model_name")
         self.model = AutoModelForCausalLM.from_pretrained(model_name)
+        self.tokeniser = tokeniser
 
         self.optimiser_params = optimiser_params
         self.lr_scheduler_params = lr_scheduler_params
-        if evaluator_params is not None:
+        if evaluator is not None:
+            self.evaluator = evaluator
+        elif evaluator_params is not None:
             self.evaluator = Evaluator.from_config(**evaluator_params)
 
+    def _convert_output_to_entities(self, output_tokens: List[List[str]], labels: List[List[int]]):
+        # loop over each element in the batch
+        for ot, l in zip(output_tokens, labels):
+            entity_string = [token for token, label in zip(ot, l) if label != -100]
+            a = self.tokeniser.decode(self.tokeniser.encode(entity_string))
+
     def generate(self, batch) -> Dict:
+        # add "informed" greedy decoding? like in kpi bert?
         return self.model.generate(input_ids=batch, num_beams=1, do_sample=False)  # greedy decoding for now
 
     def training_step(self, batch: Dict, batch_idx: int) -> Dict:
         return self.forward(batch)
 
     def forward(self, batch) -> Dict:
-        model_output = self.model(input_ids=batch["input_ids"], labels=batch["labels"])
+        labels = batch.get("labels", None)
+        model_output = self.model(input_ids=batch["input_ids"], labels=labels)
+
+        logits = model_output.logits
+        predictions = torch.argmax(logits, dim=-1)
+
+        batch["logits"] = logits
+        batch["loss"] = model_output.loss
+        batch["predictions"] = predictions
+        batch["output_tokens"] = [self.tokeniser.convert_ids_to_tokens(p) for p in torch.unbind(predictions, dim=0)]
+
+        entity_string_token_ids_predicted = [
+            torch.masked_select(p, labels != -100) for p in torch.unbind(predictions, dim=0)
+        ]
+
+        batch["entity_string_predicted"] = self.tokeniser.batch_decode(entity_string_token_ids_predicted)
+
+        # batch["entities_predicted"] = self._convert_output_to_entities(
+        #     output_tokens=batch["output_tokens"], labels=batch.get("labels", None).tolist()
+        # )
         return batch
+
+    def training_step_end(self, step_output: Dict) -> None:
+        # update metrics
+        self.evaluator.update(step_output, split="train")
+        self.log(
+            "train-loss-step",
+            step_output["loss"],
+            batch_size=self.trainer.train_dataloader.loaders.batch_size,
+        )
 
     def configure_optimizers(self):
         optimiser = Optimiser.from_config(params=self.parameters(), **self.optimiser_params)

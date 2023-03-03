@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import List, Dict, Optional, Iterator, Union
+from typing import List, Dict, Optional, Iterator, Union, Set
 
 from torch import Tensor
 
@@ -51,8 +51,8 @@ class Sentence:
     id_: int
     entity_label: Optional[List[str]] = None
 
-    token_ids: Optional[List[int]] = None
-    tokens: Optional[List[str]] = None
+    # token_ids: Optional[List[int]] = None
+    # tokens: Optional[List[str]] = None
 
     word2token_alignment_mask: Optional[Union[List[List[bool]], Tensor]] = None
     word2token_start_ids: Optional[List[int]] = None
@@ -60,14 +60,15 @@ class Sentence:
 
     entity_iobes: Optional[List[str]] = None
     entities_anno: Optional[List[Entity]] = None
-    entity_string_tokens: Optional[List[str]] = None
-    entity_string_token_ids: Optional[List[int]] = None
+    # entity_string_tokens: Optional[List[str]] = None
+    # entity_string_token_ids: Optional[List[int]] = None
 
     _content: Optional[str] = None
     _entity_string: Optional[str] = None
 
-    _input_ids: Optional[List[int]] = None
-    _labels: Optional[List[int]] = None
+    input_ids: Optional[List[int]] = None
+    input_tokens: Optional[List[str]] = None
+    labels: Optional[List[int]] = None
 
     def __len__(self):
         return len(self.words)
@@ -89,42 +90,42 @@ class Sentence:
             self._entity_string = s
         return self._entity_string
 
-    @property
-    def input_ids(self) -> List[int]:
-        """
-        Input ids for the actual generative model. This is a concatination of token_ids and entity_string_token_ids.
-
-        :return: input_ids
-        :rtype: list
-        """
-        if self._input_ids is None:
-            self._generate_input_ids_and_labels()
-        return self._input_ids
-
-    @property
-    def labels(self) -> List[int]:
-        """
-        Labels for the actual generative model. This is a concatination of [-100] * len(token_ids) and
-        entity_string_token_ids.
-
-        :return: input_ids
-        :rtype: list
-        """
-        if self._labels is None:
-            self._generate_input_ids_and_labels()
-        return self._labels
+    # @property
+    # def input_ids(self) -> List[int]:
+    #     """
+    #     Input ids for the actual generative model. This is a concatination of token_ids and entity_string_token_ids.
+    #
+    #     :return: input_ids
+    #     :rtype: list
+    #     """
+    #     if self._input_ids is None:
+    #         self._generate_input_ids_and_labels()
+    #     return self._input_ids
+    #
+    # @property
+    # def labels(self) -> List[int]:
+    #     """
+    #     Labels for the actual generative model. This is a concatination of [-100] * len(token_ids) and
+    #     entity_string_token_ids.
+    #
+    #     :return: input_ids
+    #     :rtype: list
+    #     """
+    #     if self._labels is None:
+    #         self._generate_input_ids_and_labels()
+    #     return self._labels
 
     @property
     def num_input_ids(self) -> int:
         return len(self.input_ids)
 
-    @property
-    def num_tokens(self) -> int:
-        return len(self.token_ids)
-
-    def _generate_input_ids_and_labels(self):
-        self._input_ids = self.token_ids + self.entity_string_token_ids
-        self._labels = [-100] * len(self.token_ids) + self.entity_string_token_ids
+    # @property
+    # def num_tokens(self) -> int:
+    #     return len(self.token_ids)
+    #
+    # def _generate_input_ids_and_labels(self):
+    #     self._input_ids = self.token_ids + self.entity_string_token_ids
+    #     self._labels = [-100] * len(self.token_ids) + self.entity_string_token_ids
 
     @classmethod
     def from_dict(cls, d: Dict):
@@ -149,6 +150,7 @@ class NERCorpus:
     _test_len: Optional[int] = None
     _validation_len: Optional[int] = None
     _vocabulary: Optional[NamedEntityVocabulary] = None
+    _entity_set: Optional[Set[str]] = None
 
     @property
     def vocabulary(self) -> NamedEntityVocabulary:
@@ -160,6 +162,14 @@ class NERCorpus:
             else:
                 self._vocabulary = NamedEntityVocabulary.from_corpus(corpus=self)
         return self._vocabulary
+
+    @property
+    def entity_set(self) -> Set:
+        if self._entity_set is None:
+            self._entity_set = set(
+                [entity.split("-")[1] for entity in self.vocabulary.entities.id2value.values() if len(entity) > 1]
+            )
+        return self._entity_set
 
     @property
     def train_len(self) -> int:

@@ -1,5 +1,5 @@
 import inspect
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Set
 
 from misusing_llms.training.metrics import Metric
 
@@ -13,18 +13,18 @@ class Evaluator:
         return list(self.metrics.keys())
 
     @classmethod
-    def from_config(cls, **evaluator_params):
+    def from_config(cls, entity_set: Set[str], **evaluator_params) -> "Evaluator":
 
         metrics = {}
         for metric_name, metric_kwargs in evaluator_params.items():
             if metric_kwargs:
-                metrics[metric_name] = Metric.from_config(type_=metric_name, **metric_kwargs)
+                metrics[metric_name] = Metric.from_config(type_=metric_name, entity_set=entity_set, **metric_kwargs)
             else:
-                metrics[metric_name] = Metric.from_config(type_=metric_name)
+                metrics[metric_name] = Metric.from_config(type_=metric_name, entity_set=entity_set)
 
         return cls(metrics=metrics)
 
-    def update(self, batch_output: Dict[str, Any]):
+    def update(self, batch_output: Dict[str, Any], split: str):
 
         for metric_name, metric in self.metrics.items():
             expected_arguments = inspect.signature(metric.update).parameters.keys()
