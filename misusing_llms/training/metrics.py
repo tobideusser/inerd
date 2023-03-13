@@ -3,6 +3,9 @@ from typing import Dict, Any, List, Optional, Union, Set
 
 import numpy as np
 
+from misusing_llms.data_classes import Entity
+from misusing_llms.utils.utils import entity_string_to_entity_dataclass
+
 
 class Metric(ABC):
     def __init__(self, name: str):
@@ -46,35 +49,27 @@ class NERF1(Metric):
 
         self.entity_set = entity_set
 
-        self.entity_strings: List[str] = []
+        self.ground_truth_entities: List[List[Entity]] = []
         self.entity_strings_predicted: List[str] = []
 
-        # self.pred_entities: List[List[Dict]] = []
-        # self.gt_entities: List[List[Dict]] = []
-        # self.entity_types: Optional[List[str]] = None
+    def update(self, ground_truth_entities: List[List[Entity]], entity_string_predicted: List[str]):
 
-    def update(self, entity_string: List[str], entity_string_predicted: List[str]):
-
-        self.entity_strings.extend(entity_string)
+        self.ground_truth_entities.extend(ground_truth_entities)
         self.entity_strings_predicted.extend(entity_string_predicted)
 
-    def compute(self, reset: bool = False):
-        assert len(self.entity_strings) == len(self.entity_strings_predicted)
+    def compute(self):
+        assert len(self.ground_truth_entities) == len(self.entity_strings_predicted)
 
-        statistics = {ent: {"tp": 0, "fp": 0, "fn": 0, "support": 0} for ent in self.entity_types}
+        statistics = {ent: {"tp": 0, "fp": 0, "fn": 0, "support": 0} for ent in self.entity_set}
         clf_report = {}
 
-        # Count GT entities and Predicted entities
-        # n_sents = len(self.gt_entities)
-        # n_phrases = sum([len([ent for ent in sent]) for sent in self.gt_entities])
-        # n_found = sum([len([ent for ent in sent]) for sent in self.pred_entities])
+        predicted_entities = [entity_string_to_entity_dataclass(es) for es in self.entity_strings_predicted]
 
         # Count TP, FP and FN per type
-        for pred_sent, gt_sent in zip(self.pred_entities, self.gt_entities):
-            for ent_type in self.entity_types:
-                # if ent_type not in ['davon_increase', 'davon_decrease', 'increase_py', 'decrease_py', 'py1']:
-                pred_ents = {(ent["start"], ent["end"]) for ent in pred_sent if ent["type_"] == ent_type}
-                gt_ents = {(ent["start"], ent["end"]) for ent in gt_sent if ent["type_"] == ent_type}
+        for prediction, ground_turth in zip(predicted_entities, self.ground_truth_entities):
+            for ent_type in self.entity_set:
+                pred_ents = {ent.words for ent in prediction if ent.type_ == ent_type}
+                gt_ents = {ent.words for ent in ground_turth if ent.type_ == ent_type}
                 statistics[ent_type]["support"] += len(gt_ents)
                 statistics[ent_type]["tp"] += len(pred_ents & gt_ents)
                 statistics[ent_type]["fp"] += len(pred_ents - gt_ents)
@@ -100,10 +95,10 @@ class NERF1(Metric):
         clf_report = dict(sorted(clf_report.items(), key=lambda item: item[1]["Support"], reverse=True))
 
         # Compute micro F1 Scores
-        tp_all = sum([statistics[ent_type]["tp"] for ent_type in self.entity_types])
-        fp_all = sum([statistics[ent_type]["fp"] for ent_type in self.entity_types])
-        fn_all = sum([statistics[ent_type]["fn"] for ent_type in self.entity_types])
-        support_all = sum([statistics[ent_type]["support"] for ent_type in self.entity_types])
+        tp_all = sum([statistics[ent_type]["tp"] for ent_type in self.entity_set])
+        fp_all = sum([statistics[ent_type]["fp"] for ent_type in self.entity_set])
+        fn_all = sum([statistics[ent_type]["fn"] for ent_type in self.entity_set])
+        support_all = sum([statistics[ent_type]["support"] for ent_type in self.entity_set])
 
         if tp_all:
             micro_precision = 100 * tp_all / (tp_all + fp_all)
@@ -122,13 +117,13 @@ class NERF1(Metric):
 
         # Compute Macro F1 Scores
         macro_precision = np.mean(
-            [clf_report[ent_type]["Precision"] for ent_type in self.entity_types if clf_report[ent_type]["Support"] > 0]
+            [clf_report[ent_type]["Precision"] for ent_type in self.entity_set if clf_report[ent_type]["Support"] > 0]
         )
         macro_recall = np.mean(
-            [clf_report[ent_type]["Recall"] for ent_type in self.entity_types if clf_report[ent_type]["Support"] > 0]
+            [clf_report[ent_type]["Recall"] for ent_type in self.entity_set if clf_report[ent_type]["Support"] > 0]
         )
         macro_f1 = np.mean(
-            [clf_report[ent_type]["F1"] for ent_type in self.entity_types if clf_report[ent_type]["Support"] > 0]
+            [clf_report[ent_type]["F1"] for ent_type in self.entity_set if clf_report[ent_type]["Support"] > 0]
         )
 
         clf_report["macro avg"] = {
@@ -138,14 +133,11 @@ class NERF1(Metric):
             "Support": support_all,
         }
 
-        if reset:
-            self.reset()
-
         return {"ner_clf_report": clf_report, "ner_micro_f1": micro_f1, "ner_macro_f1": macro_f1}
 
     def reset(self):
-        self.pred_entities = []
-        self.gt_entities = []
+        self.ground_truth_entities = []
+        self.entity_strings_predicted = []
 
 
 METRICS = {"nerf1": NERF1}

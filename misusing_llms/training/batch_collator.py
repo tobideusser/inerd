@@ -36,5 +36,6 @@ class NERBatchCollator:
             ),
             "input_tokens": [sentence.input_tokens for sentence in batch],
             "entity_string": [sentence.entity_string for sentence in batch],
+            "ground_truth_entities": [sentence.entities_anno for sentence in batch],
         }
         return d

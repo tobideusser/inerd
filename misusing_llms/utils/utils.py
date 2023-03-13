@@ -6,8 +6,17 @@ from typing import List, Optional, Union, Dict
 import numpy as np
 import torch
 
+from misusing_llms.data_classes import Entity
+
 _SEED: Optional[int] = None
 _DEVICE: Optional[torch.device] = None
+
+
+# todo: remove unused helper functions!
+
+
+def entity_string_to_entity_dataclass(entity_string: str) -> List[Entity]:
+    pass
 
 
 def get_balanced_devices(
