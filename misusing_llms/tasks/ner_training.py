@@ -93,14 +93,14 @@ class NERTraining(Task):
         return dataloaders
 
     def _init_model_loggers(self) -> List:
-        run_dir = self.get_store_context()
-        run_name = os.path.split(run_dir)[-1]
+        run_dir = self.get_store_context().run_dir
+        run_id = self.id
 
         initialised_loggers = []
 
         if self.wandb_logging:
             # todo: run_info.run_name will be changed in the final 0.3 fluidml release
-            initialised_loggers.append(WandbLogger(project=self.run_info.project_name, name=run_name, save_dir=run_dir))
+            initialised_loggers.append(WandbLogger(project=self.info.project_name, name=run_id, save_dir=run_dir))
             self._save_wandb_api_path()
 
         if self.tensorboard_logging:
@@ -113,7 +113,7 @@ class NERTraining(Task):
     def _save_wandb_api_path(self):
         import wandb
 
-        run_dir = self.get_store_context()
+        run_dir = self.get_store_context().run_dir
         sub_dir = os.path.relpath(wandb.run.dir, run_dir)
         self.save(
             {"wandb_api_path": wandb.run.path},
@@ -123,7 +123,7 @@ class NERTraining(Task):
         )
 
     def _init_model_callbacks(self) -> List:
-        run_dir = self.get_store_context()
+        run_dir = self.get_store_context().run_dir
 
         model_checkpoint = ModelCheckpoint(
             monitor=self.training_params["callbacks"].monitor_var,

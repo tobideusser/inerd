@@ -3,11 +3,13 @@ import logging
 import os
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Union, Optional
+from pathlib import Path
+from typing import Union, Optional, Dict, Callable, Any
 
 import torch
-
 from fluidml.storage import LocalFileStore, TypeInfo
+from pytorch_lightning.utilities.cloud_io import atomic_save, get_filesystem
+from pytorch_lightning.utilities.cloud_io import load as pl_load
 from rich.logging import RichHandler
 from transformers import PreTrainedTokenizerFast
 
@@ -18,8 +20,15 @@ class MyLocalFileStore(LocalFileStore):
     def __init__(self, base_dir: str):
         super().__init__(base_dir=base_dir)
 
-        self._type_registry["torch"] = TypeInfo(torch.save, torch.load, "pt", is_binary=True)
-        self._type_registry["tokeniser"] = TypeInfo(self._save_tokeniser, self._load_tokeniser, needs_path=True)
+        self.type_registry["torch"] = TypeInfo(torch.save, torch.load, "pt", is_binary=True)
+        self.type_registry["tokeniser"] = TypeInfo(self._save_tokeniser, self._load_tokeniser, needs_path=True)
+        self.type_registry["pl_checkpoint"] = TypeInfo(
+            self._save_pl_checkpoint,
+            self._load_pl_checkpoint,
+            "ckpt",
+            is_binary=True,
+            needs_path=True,
+        )
 
     @staticmethod
     def _save_tokeniser(obj: PreTrainedTokenizerFast, path: str):
@@ -28,6 +37,23 @@ class MyLocalFileStore(LocalFileStore):
     @staticmethod
     def _load_tokeniser(path: str) -> PreTrainedTokenizerFast:
         return PreTrainedTokenizerFast.from_pretrained(path)
+
+    @staticmethod
+    def _save_pl_checkpoint(checkpoint: Dict[str, Any], path: Union[str, Path]):
+        fs = get_filesystem(path)
+        fs.makedirs(os.path.dirname(path), exist_ok=True)
+        atomic_save(checkpoint, path)
+
+    @staticmethod
+    def _load_pl_checkpoint(
+        path: Union[str, Path],
+        map_location: Optional[Callable] = lambda storage, loc: storage,
+    ) -> Dict[str, Any]:
+        # Try to read the checkpoint at `path`. If not exist, do not restore checkpoint.
+        fs = get_filesystem(path)
+        if not fs.exists(path):
+            raise FileNotFoundError(f"Checkpoint at {path} not found. Aborting training.")
+        return pl_load(path, map_location=map_location)
 
 
 @dataclass
@@ -59,7 +85,7 @@ def add_file_handler(log_dir: str, name: str = "logs", type_: str = "txt", level
     if level not in ["DEBUG", "INFO", "WARNING", "WARN", "ERROR", "FATAL", "CRITICAL", 10, 20, 30, 40, 50]:
         raise ValueError(f'Logging level "{level}" is not supported.')
 
-    log_path = os.path.join(log_dir, f"{name}.{type_}")
+    log_path = os.path.join(log_dir.run_dir, f"{name}.{type_}")
     file_handler = logging.FileHandler(log_path)
     file_handler.setLevel(level)
     file_formatter = logging.Formatter("%(processName)s - %(asctime)s - %(levelname)s - %(message)s")

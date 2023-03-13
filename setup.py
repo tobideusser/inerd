@@ -7,7 +7,7 @@ setup(
     packages=find_packages(),
     install_requires=[
         "torch",
-        "fluidml",
+        "fluidml==0.3.1",
         "datasets",
         "tokenizers",
         "pytorch-lightning",

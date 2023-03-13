@@ -1,7 +1,7 @@
 import logging
 from typing import Dict, Optional, Union
 
-from fluidml.common import Task
+from fluidml import Task
 from tqdm import tqdm
 from transformers import AutoTokenizer
 

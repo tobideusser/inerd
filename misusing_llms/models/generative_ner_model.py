@@ -75,6 +75,11 @@ class GenerativeNERModel(pl.LightningModule):
             batch_size=self.trainer.train_dataloader.loaders.batch_size,
         )
 
+    def training_epoch_end(self, outputs: Dict) -> None:
+        # compute and log metrics
+        metrics = self.evaluator.compute(reset=True, split="train")
+        self.log_metrics(metrics)
+
     def configure_optimizers(self):
         optimiser = Optimiser.from_config(params=self.parameters(), **self.optimiser_params)
         self.trainer.reset_train_dataloader(self)

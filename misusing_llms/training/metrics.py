@@ -59,7 +59,7 @@ class NERF1(Metric):
         self.entity_strings_predicted.extend(entity_string_predicted)
 
     def compute(self, reset: bool = False):
-        assert len(self.pred_entities) == len(self.gt_entities)
+        assert len(self.entity_strings) == len(self.entity_strings_predicted)
 
         statistics = {ent: {"tp": 0, "fp": 0, "fn": 0, "support": 0} for ent in self.entity_types}
         clf_report = {}
