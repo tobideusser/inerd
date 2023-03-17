@@ -37,7 +37,27 @@ class GenerativeNERModel(pl.LightningModule):
 
     def generate(self, batch) -> Dict:
         # add "informed" greedy decoding? like in kpi bert?
-        return self.model.generate(input_ids=batch, num_beams=1, do_sample=False)  # greedy decoding for now
+        predictions = self.model.generate(
+            input_ids=batch["prompt_ids"], num_beams=1, do_sample=False, max_length=batch["max_length_prompt_ids"] + 100
+        )
+        batch["predictions"] = predictions
+        batch["output_tokens"] = [self.tokeniser.convert_ids_to_tokens(p) for p in torch.unbind(predictions, dim=0)]
+        entity_string_token_ids_predicted = predictions[:, batch["max_length_prompt_ids"] :]
+        batch["entity_string_predicted"] = self.tokeniser.batch_decode(entity_string_token_ids_predicted)
+        return batch
+
+    def validation_step(self, batch: Dict, batch_idx: int) -> Dict:
+        # add "informed" greedy decoding? like in kpi bert?
+        return self.generate(batch)
+
+    def validation_step_end(self, step_output: Dict) -> None:
+        # update metrics
+        self.evaluator.update(self._detach_tensors_in_dict(step_output))
+
+    def validation_epoch_end(self, outputs: Dict) -> None:
+        # compute and log metrics
+        metrics = self.evaluator.compute(reset=True)
+        self.log_metrics(metrics)
 
     def training_step(self, batch: Dict, batch_idx: int) -> Dict:
         return self.forward(batch)

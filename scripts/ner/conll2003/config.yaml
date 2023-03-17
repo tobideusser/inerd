@@ -10,7 +10,7 @@ Parsing:
   dataset: "CoNLL-2003"
   path_to_data_folders: null
   dataset_name: "CoNLL-2003"
-  debug_size: null
+  debug_size: 10
 
 ################
 # Tokenisation #
@@ -23,7 +23,6 @@ Tokenisation:
   tokeniser_name: &modelname "facebook/opt-1.3b"
   special_tokens: null
   combine_token: "\n"
-#    additional_special_tokens : [['[NUM]']] ** it was giving error with this argument
 
 
 ##################

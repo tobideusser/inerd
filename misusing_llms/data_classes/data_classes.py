@@ -69,6 +69,7 @@ class Sentence:
     input_ids: Optional[List[int]] = None
     input_tokens: Optional[List[str]] = None
     labels: Optional[List[int]] = None
+    _prompt_end_in_input_ids: Optional[int] = None
 
     def __len__(self):
         return len(self.words)
@@ -91,6 +92,15 @@ class Sentence:
                 s = ";"  # no entities, model should just predict ;
             self._entity_string = s
         return self._entity_string
+
+    @property
+    def prompt_end_in_input_ids(self) -> int:
+        if not self._prompt_end_in_input_ids:
+            for i, label in enumerate(self.labels):
+                if label != -100:
+                    self._prompt_end_in_input_ids = i
+                    break
+        return self._prompt_end_in_input_ids
 
     # @property
     # def input_ids(self) -> List[int]:
