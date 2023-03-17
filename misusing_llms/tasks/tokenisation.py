@@ -30,9 +30,7 @@ class Tokenisation(Task):
 
         self.train_mode = train_mode
 
-        self.tokeniser = AutoTokenizer.from_pretrained(self.tokeniser_name, use_fast=True)
-        # if self.special_tokens is not None:
-        #     self.tokeniser.add_special_tokens(self.special_tokens)
+        self.tokeniser = AutoTokenizer.from_pretrained(self.tokeniser_name, use_fast=False)
 
     def _tokenise_corpus(self, corpus: NERCorpus) -> NERCorpus:
 

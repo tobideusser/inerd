@@ -4,7 +4,6 @@ from typing import Dict, Optional, List
 import pandas as pd
 import pytorch_lightning as pl
 import torch
-import wandb
 from transformers import AutoModelForCausalLM, PreTrainedTokenizerFast
 
 from misusing_llms.training import Optimiser, LearningRateScheduler, Evaluator
