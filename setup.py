@@ -20,5 +20,7 @@ setup(
         "numpy",
         "markdown",
         "torchmetrics",
+        "pandas",
+        "fsspec",
     ],
 )

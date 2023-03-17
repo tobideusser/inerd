@@ -24,7 +24,7 @@ class Evaluator:
 
         return cls(metrics=metrics)
 
-    def update(self, batch_output: Dict[str, Any], split: str):
+    def update(self, batch_output: Dict[str, Any]):
 
         for metric_name, metric in self.metrics.items():
             expected_arguments = inspect.signature(metric.update).parameters.keys()

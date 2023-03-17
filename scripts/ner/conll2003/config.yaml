@@ -61,7 +61,7 @@ Training:
         val_check_interval: 1. # 0.25  # 1.
 
       callbacks:
-        monitor_var: 'valid-sensitivity_3_r2b_micro'
+        monitor_var: 'ner_micro_f1'
         monitor_var_mode: 'max'
         apply_early_stopping: false
         patience: null

@@ -1,10 +1,15 @@
+import logging
 from typing import Dict, Optional, List
 
+import pandas as pd
 import pytorch_lightning as pl
 import torch
+import wandb
 from transformers import AutoModelForCausalLM, PreTrainedTokenizerFast
 
 from misusing_llms.training import Optimiser, LearningRateScheduler, Evaluator
+
+logger = logging.getLogger(__name__)
 
 
 class GenerativeNERModel(pl.LightningModule):
@@ -65,7 +70,7 @@ class GenerativeNERModel(pl.LightningModule):
 
     def training_step_end(self, step_output: Dict) -> None:
         # update metrics
-        self.evaluator.update(step_output, split="train")
+        self.evaluator.update(step_output)
         self.log(
             "train-loss-step",
             step_output["loss"],
@@ -74,8 +79,29 @@ class GenerativeNERModel(pl.LightningModule):
 
     def training_epoch_end(self, outputs: Dict) -> None:
         # compute and log metrics
-        metrics = self.evaluator.compute(reset=True, split="train")
+        metrics = self.evaluator.compute(reset=True)
         self.log_metrics(metrics)
+
+    def log_metrics(self, metrics: Dict, verbose: bool = True):
+        for k, v in metrics.items():
+            if isinstance(v, dict):
+                self._log_summary_dict(name=k, summary_dict=v)
+            else:
+                self.log(name=k, value=v)
+
+    def _log_summary_dict(self, name: str, summary_dict: Dict):
+
+        for train_logger in self.loggers:
+            if isinstance(train_logger, pl.loggers.tensorboard.TensorBoardLogger):
+                # use pandas to format as a human-readable table
+                table = pd.DataFrame.from_dict(summary_dict, orient="index")
+                train_logger.experiment.add_text(name, table.to_string(), global_step=self.current_epoch)
+            elif isinstance(train_logger, pl.loggers.wandb.WandbLogger):
+                for entity_type, scores in summary_dict.items():
+                    for score_type, score in scores.items():
+                        self.log(name=score_type + "--" + entity_type, value=float(score))
+            else:
+                logger.error(f"pl.Trainer.logger of type {type(train_logger)} can not store text.")
 
     def configure_optimizers(self):
         optimiser = Optimiser.from_config(params=self.parameters(), **self.optimiser_params)
