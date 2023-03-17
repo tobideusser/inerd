@@ -15,8 +15,20 @@ _DEVICE: Optional[torch.device] = None
 # todo: remove unused helper functions!
 
 
-def entity_string_to_entity_dataclass(entity_string: str) -> List[Entity]:
-    pass
+def entity_string_to_entity_dataclass(entity_string: str) -> Union[List[Entity], List]:
+    if ";" in entity_string:
+        entity_blocks = entity_string.split(";")
+        entities = []
+        for entity_block in entity_blocks:
+            if ":" in entity_block:
+                split = entity_block.split(":")
+                # if conditions remove leading space if it exists
+                entity_type = split[0] if split[0][0] != " " else split[0][1:]
+                entity_words = split[1] if split[1][0] != " " else split[1][1:]
+                entities.append(Entity(words=entity_words, type_=entity_type))
+        return entities
+    else:
+        return []
 
 
 def get_balanced_devices(
@@ -186,3 +198,14 @@ def softmax(x):
     """Compute softmax values for each sets of scores in x."""
     e_x = np.exp(x - np.max(x))
     return e_x / e_x.sum(axis=0)
+
+
+# debug entity_string
+if __name__ == "__main__":
+    es = "LOC: Germany; ORG: European Union; PER: Werner Zwingmann; LOC: Britain;"
+    e = entity_string_to_entity_dataclass(es)
+    print([a.to_dict() for a in e])
+    es = "WRONG-STRING test; a b c d e f; BLABLA: blabla; NEIN; JA; ajsd:asjd:kkkaaa:ert;"
+    e = entity_string_to_entity_dataclass(es)
+    print([a.to_dict() for a in e])
+    pass

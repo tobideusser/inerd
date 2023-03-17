@@ -31,9 +31,9 @@ class NamedEntityVocabulary:
 
 @dataclass
 class Entity:
-    start: int
-    words: List[str]
+    words: Union[List[str], str]
     type_: str
+    start: Optional[int] = None
     end: Optional[int] = None
 
     @classmethod
