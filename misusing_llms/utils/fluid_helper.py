@@ -1,4 +1,5 @@
 import functools
+import io
 import logging
 import os
 from dataclasses import dataclass
@@ -6,14 +7,33 @@ from datetime import datetime
 from pathlib import Path
 from typing import Union, Optional, Dict, Callable, Any
 
+import fsspec
 import torch
 from fluidml.storage import LocalFileStore, TypeInfo
-from pytorch_lightning.utilities.cloud_io import atomic_save, get_filesystem
 from pytorch_lightning.utilities.cloud_io import load as pl_load
+from lightning_fabric.utilities.cloud_io import get_filesystem
 from rich.logging import RichHandler
 from transformers import PreTrainedTokenizerFast
 
 logger = logging.getLogger(__name__)
+
+
+def atomic_save(checkpoint: Dict[str, Any], filepath: Union[str, Path]) -> None:
+    """Saves a checkpoint atomically, avoiding the creation of incomplete checkpoints.
+
+    Copied from pytorch lightning, as functionality was deprecated in v1.8.0 and will be removed in v2.0.0!
+
+    Args:
+        checkpoint: The object to save.
+            Built to be used with the ``dump_checkpoint`` method, but can deal with anything which ``torch.save``
+            accepts.
+        filepath: The path to which the checkpoint will be saved.
+            This points to the file that the checkpoint will be stored in.
+    """
+    bytesbuffer = io.BytesIO()
+    torch.save(checkpoint, bytesbuffer)
+    with fsspec.open(filepath, "wb") as f:
+        f.write(bytesbuffer.getvalue())
 
 
 class MyLocalFileStore(LocalFileStore):
