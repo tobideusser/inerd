@@ -1,3 +1,4 @@
+import copy
 import logging
 from typing import Dict, Optional, List
 
@@ -34,12 +35,6 @@ class GenerativeNERModel(pl.LightningModule):
         elif evaluator_params is not None:
             self.evaluator = Evaluator.from_config(**evaluator_params)
 
-    def _convert_output_to_entities(self, output_tokens: List[List[str]], labels: List[List[int]]):
-        # loop over each element in the batch
-        for ot, l in zip(output_tokens, labels):
-            entity_string = [token for token, label in zip(ot, l) if label != -100]
-            a = self.tokeniser.decode(self.tokeniser.encode(entity_string))
-
     def generate(self, batch) -> Dict:
         # add "informed" greedy decoding? like in kpi bert?
         return self.model.generate(input_ids=batch, num_beams=1, do_sample=False)  # greedy decoding for now
@@ -69,10 +64,11 @@ class GenerativeNERModel(pl.LightningModule):
 
     def training_step_end(self, step_output: Dict) -> None:
         # update metrics
-        self.evaluator.update(step_output)
+        self.evaluator.update(self._detach_tensors_in_dict(step_output))
+        loss = float(step_output["loss"])
         self.log(
             "train-loss-step",
-            step_output["loss"],
+            loss,
             batch_size=self.trainer.train_dataloader.loaders.batch_size,
         )
 
@@ -101,6 +97,13 @@ class GenerativeNERModel(pl.LightningModule):
                         self.log(name=score_type + "--" + entity_type, value=float(score))
             else:
                 logger.error(f"pl.Trainer.logger of type {type(train_logger)} can not store text.")
+
+    @staticmethod
+    def _detach_tensors_in_dict(d: Dict) -> Dict:
+        for k, v in d.items():
+            if isinstance(v, torch.Tensor) and k != "loss":
+                d[k] = v.detach().cpu()
+        return d
 
     def configure_optimizers(self):
         optimiser = Optimiser.from_config(params=self.parameters(), **self.optimiser_params)

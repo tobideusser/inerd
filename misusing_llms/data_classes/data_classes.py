@@ -87,6 +87,8 @@ class Sentence:
                 s += entity.type_ + ": " + " ".join(entity.words) + "; "
             if len(s) > 0:
                 s = s[:-1]
+            elif s == "":
+                s = ";"  # no entities, model should just predict ;
             self._entity_string = s
         return self._entity_string
 

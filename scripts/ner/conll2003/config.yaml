@@ -1,5 +1,5 @@
 # Base directory to store all task outputs
-base_dir: "/scratch/data/misusing_llms/conll2003_dev"
+base_dir: "/scratch/data/misusing_llms/conll2003_v1"
 seed: &seed 3141
 
 ###########
@@ -10,7 +10,7 @@ Parsing:
   dataset: "CoNLL-2003"
   path_to_data_folders: null
   dataset_name: "CoNLL-2003"
-  debug_size: 10
+  debug_size: null
 
 ################
 # Tokenisation #
@@ -20,7 +20,7 @@ Tokenisation:
   # english: "bert-base-cased"
   # multilingual: "bert-base-multilingual-cased"
   # "ahmedrachid/FinancialBERT"
-  tokeniser_name: &modelname "facebook/opt-125m"
+  tokeniser_name: &modelname "facebook/opt-1.3b"
   special_tokens: null
   combine_token: "\n"
 #    additional_special_tokens : [['[NUM]']] ** it was giving error with this argument
@@ -53,7 +53,7 @@ Training:
         lr_warmup: 0.1
 
       trainer:
-        max_epochs: 10
+        max_epochs: 50
         accumulate_grad_batches: 1 # [2, 4]  # 4
         gradient_clip_val: 1  # [1, 10]  # 10
         precision: 32  # 16
@@ -75,7 +75,7 @@ Training:
           weights: null
 
       data_loading:
-        batch_size: 1
+        batch_size: 4
         drop_last: false
         combine_train_valid: false
         validate_on_test_set: false

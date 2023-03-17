@@ -65,7 +65,7 @@ class Tokenisation(Task):
         else:
             corpus = corpus_parsed
 
-        logger.debug("Tokenise corpus...")
+        logger.info("Tokenise corpus...")
         corpus_tokenised = self._tokenise_corpus(corpus)
 
         if self.train_mode:
