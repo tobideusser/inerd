@@ -19,5 +19,6 @@ setup(
         "rich",
         "numpy",
         "markdown",
+        "torchmetrics",
     ],
 )

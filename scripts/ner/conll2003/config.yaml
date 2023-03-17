@@ -69,6 +69,10 @@ Training:
 
       metrics:
         nerf1: null
+        bleu:
+          n_gram: 4
+          smooth: false
+          weights: null
 
       data_loading:
         batch_size: 1

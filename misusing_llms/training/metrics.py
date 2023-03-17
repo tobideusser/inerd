@@ -1,7 +1,9 @@
+import inspect
 from abc import ABC, abstractmethod
 from typing import Dict, Any, List, Union, Set
 
 import numpy as np
+from torchmetrics import BLEUScore
 
 from misusing_llms.data_classes import Entity
 from misusing_llms.utils import entity_string_to_entity_dataclass
@@ -18,6 +20,8 @@ class Metric(ABC):
         except KeyError:
             raise KeyError(f'Metric "{type_}" is not implemented.')
 
+        if "entity_set" not in inspect.signature(class_).parameters.keys():
+            del kwargs["entity_set"]
         return class_(name=type_, *args, **kwargs)
 
     @abstractmethod
@@ -53,7 +57,6 @@ class NERF1(Metric):
         self.entity_strings_predicted: List[str] = []
 
     def update(self, ground_truth_entities: List[List[Entity]], entity_string_predicted: List[str]):
-
         self.ground_truth_entities.extend(ground_truth_entities)
         self.entity_strings_predicted.extend(entity_string_predicted)
 
@@ -156,4 +159,20 @@ class NERF1(Metric):
         self.entity_strings_predicted = []
 
 
-METRICS = {"nerf1": NERF1}
+class BLEU(Metric):
+    def __init__(self, name: str, **kwargs):
+        super().__init__(name=name)
+
+        self.bleu = BLEUScore(**kwargs)
+
+    def update(self, entity_string: List[str], entity_string_predicted: List[str]):
+        self.bleu.update(preds=entity_string_predicted, target=entity_string)
+
+    def reset(self):
+        self.bleu.reset()
+
+    def compute(self):
+        return {"bleu": float(self.bleu.compute())}
+
+
+METRICS = {"nerf1": NERF1, "bleu": BLEU}

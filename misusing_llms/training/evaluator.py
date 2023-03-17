@@ -32,7 +32,7 @@ class Evaluator:
 
             metric.update(**metric_kwargs)
 
-    def compute(self, split: str, reset: bool = False):
+    def compute(self, reset: bool = False):
         metrics = {}
         for metric in self.metrics.values():
             metrics = {**metrics, **metric.compute_wrapped(reset=reset)}
