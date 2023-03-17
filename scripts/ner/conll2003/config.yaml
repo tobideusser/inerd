@@ -10,7 +10,7 @@ Parsing:
   dataset: "CoNLL-2003"
   path_to_data_folders: null
   dataset_name: "CoNLL-2003"
-  debug_size: 10
+  debug_size: null
 
 ################
 # Tokenisation #

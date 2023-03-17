@@ -1,6 +1,5 @@
-import copy
 import logging
-from typing import Dict, Optional, List
+from typing import Dict, Optional
 
 import pandas as pd
 import pytorch_lightning as pl
