@@ -61,9 +61,6 @@ class GenerativeNERModel(pl.LightningModule):
 
         batch["entity_string_predicted"] = self.tokeniser.batch_decode(entity_string_token_ids_predicted)
 
-        # batch["entities_predicted"] = self._convert_output_to_entities(
-        #     output_tokens=batch["output_tokens"], labels=batch.get("labels", None).tolist()
-        # )
         return batch
 
     def training_step_end(self, step_output: Dict) -> None:

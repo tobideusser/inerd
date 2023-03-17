@@ -22,10 +22,11 @@ def entity_string_to_entity_dataclass(entity_string: str) -> Union[List[Entity],
         for entity_block in entity_blocks:
             if ":" in entity_block:
                 split = entity_block.split(":")
-                # if conditions remove leading space if it exists
-                entity_type = split[0] if split[0][0] != " " else split[0][1:]
-                entity_words = split[1] if split[1][0] != " " else split[1][1:]
-                entities.append(Entity(words=entity_words, type_=entity_type))
+                if len(split[0]) > 0 and len(split[1]) > 0:
+                    # if conditions remove leading space if it exists
+                    entity_type = split[0] if split[0][0] != " " else split[0][1:]
+                    entity_words = split[1] if split[1][0] != " " else split[1][1:]
+                    entities.append(Entity(words=entity_words, type_=entity_type))
         return entities
     else:
         return []
