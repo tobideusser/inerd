@@ -1,5 +1,6 @@
 # Base directory to store all task outputs
-base_dir: "/scratch/data/misusing_llms/conll2003_v1"
+#base_dir: "/cluster/data/experiments/misusing_llms/conll2003_debug"
+base_dir: "/scratch/data/misusing_llms/conll2003_dev"
 seed: &seed 3141
 
 ###########
@@ -10,16 +11,18 @@ Parsing:
   dataset: "CoNLL-2003"
   path_to_data_folders: null
   dataset_name: "CoNLL-2003"
-  debug_size: null
+  debug_size: 10
+  type_mapping:
+    PER: "Person"
+    LOC: "Location"
+    ORG: "Organisation"
+    MISC: "Miscellaneous"
 
 ################
 # Tokenisation #
 ################
 
 Tokenisation:
-  # english: "bert-base-cased"
-  # multilingual: "bert-base-multilingual-cased"
-  # "ahmedrachid/FinancialBERT"
   tokeniser_name: &modelname "facebook/opt-1.3b"
   special_tokens: null
   combine_token: "\n"
@@ -37,13 +40,15 @@ Training:
     tensorboard_logging: false
 
     model_params:
-
       model_name: *modelname
+
+    generation_params:
+      informed: false
 
     training_params:
       optimiser:
         type_: 'adamW'
-        lr: 1.e-3
+        lr: 1.e-5
         weight_decay: 0.01
 
       lr_scheduler:
@@ -60,7 +65,7 @@ Training:
         val_check_interval: 1. # 0.25  # 1.
 
       callbacks:
-        monitor_var: 'ner_micro_f1'
+        monitor_var: 'valid-ner_micro_f1'
         monitor_var_mode: 'max'
         apply_early_stopping: false
         patience: null
@@ -68,10 +73,10 @@ Training:
 
       metrics:
         nerf1: null
-        bleu:
-          n_gram: 4
-          smooth: false
-          weights: null
+#        bleu:
+#          n_gram: 4
+#          smooth: false
+#          weights: null
 
       data_loading:
         batch_size: 4

@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, Dict
 
 from datasets import load_dataset
 from tqdm import tqdm
@@ -8,8 +8,10 @@ from misusing_llms.parser import BaseParser
 
 
 class CoNLL2003HuggingFaceParser(BaseParser):
-    def __init__(self, debug_size: Optional[int] = None, dataset_name: Optional[str] = None):
-        super().__init__()
+    def __init__(
+        self, type_mapping: Optional[Dict] = None, debug_size: Optional[int] = None, dataset_name: Optional[str] = None
+    ):
+        super().__init__(type_mapping=type_mapping)
         self.dataset_name = dataset_name if dataset_name else "CoNLL2003"
         self.debug_size = debug_size
 

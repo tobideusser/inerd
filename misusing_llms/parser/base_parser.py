@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from importlib import import_module
 from inspect import signature
-from typing import List, Dict
+from typing import List, Dict, Optional
 
 from misusing_llms.data_classes import Entity
 
@@ -12,7 +12,9 @@ class BaseParser(ABC):
         "CoNLL-2003": "misusing_llms.parser.conll2003_huggingface_parser.CoNLL2003HuggingFaceParser",
     }
 
-    def __init__(self):
+    def __init__(self, type_mapping: Optional[Dict] = None):
+        self.type_mapping = type_mapping
+
         self.entity_tag_to_label = None
         self._begin_tags = None
 
@@ -51,6 +53,10 @@ class BaseParser(ABC):
             if (i + 1) == len(entity_tags) and entity_found_flag:
                 entities.append(entity)
 
+        if self.type_mapping:
+            for entity in entities:
+                entity.type_ = self.type_mapping[entity.type_]
+
         return entities
 
     @abstractmethod
@@ -58,7 +64,7 @@ class BaseParser(ABC):
         raise NotImplementedError
 
     @classmethod
-    def load_parser(cls, type_: str, *args, **kwargs) -> "BaseParser":
+    def load_parser(cls, type_: str, type_mapping: Optional[Dict] = None, *args, **kwargs) -> "BaseParser":
         """function to load different parsers"""
         try:
             callable_path = cls.PARSER[type_]
@@ -71,4 +77,4 @@ class BaseParser(ABC):
         module = import_module(module_name)
         class_ = getattr(module, class_name)
         kwargs_filtered = {k: v for k, v in kwargs.items() if k in signature(class_).parameters}
-        return class_(*args, **kwargs_filtered)
+        return class_(type_mapping=type_mapping, *args, **kwargs_filtered)

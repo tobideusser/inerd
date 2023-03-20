@@ -1,5 +1,5 @@
 import logging
-from typing import Optional
+from typing import Optional, Dict
 
 from fluidml import Task
 
@@ -13,6 +13,7 @@ class Parsing(Task):
         self,
         dataset: str,
         debug_size: Optional[int] = None,
+        type_mapping: Optional[Dict] = None,
         train_mode: bool = True,
         **kwargs,
     ):
@@ -22,6 +23,7 @@ class Parsing(Task):
         self.dataset_name = kwargs.get("dataset_name", dataset)
         self.debug_size = debug_size
         self.dataset = dataset
+        self.type_mapping = type_mapping
 
         self.parsing_cfg = kwargs
 
@@ -29,7 +31,9 @@ class Parsing(Task):
 
     def run(self):
         logger.info(f"Parse {self.dataset_name} dataset with debug size {self.debug_size}.")
-        parser = BaseParser.load_parser(type_=self.dataset, debug_size=self.debug_size, **self.parsing_cfg)
+        parser = BaseParser.load_parser(
+            type_=self.dataset, debug_size=self.debug_size, type_mapping=self.type_mapping, **self.parsing_cfg
+        )
         corpus = parser.parse()
 
         if self.train_mode:
