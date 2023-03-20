@@ -87,6 +87,7 @@ class NERTraining(Task):
                 dataset=split_dataset,
                 collate_fn=batch_collator,
                 shuffle=True if split_type == "train" else False,
+                num_workers=0,
                 **self.training_params["data_loading"],
             )
 

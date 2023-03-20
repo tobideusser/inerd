@@ -36,7 +36,7 @@ class Tokenisation(Task):
 
         for sentence in tqdm(corpus.sentences):
             prompt_tokens = sentence.content + " " + self.combine_token
-            input_tokens = prompt_tokens + " " + sentence.entity_string
+            input_tokens = prompt_tokens + " " + sentence.entity_string + self.tokeniser.eos_token
 
             sentence.input_ids = self.tokeniser(input_tokens).input_ids
             sentence.input_tokens = self.tokeniser.batch_decode(sentence.input_ids)
