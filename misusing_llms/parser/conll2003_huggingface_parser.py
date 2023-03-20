@@ -30,6 +30,11 @@ class CoNLL2003HuggingFaceParser(BaseParser):
             7: "B-MISC",
             8: "I-MISC",
         }
+        if self.type_mapping is not None:
+            for k, v in self.entity_tag_to_label.items():
+                for kk, vv in self.type_mapping.items():
+                    if kk in v:
+                        self.entity_tag_to_label[k] = self.entity_tag_to_label[k].replace(kk, vv)
         for split_type in ["train", "validation", "test"]:
             for i, sentence in tqdm(
                 enumerate(dataset[split_type]),

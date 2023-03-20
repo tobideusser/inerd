@@ -53,10 +53,6 @@ class BaseParser(ABC):
             if (i + 1) == len(entity_tags) and entity_found_flag:
                 entities.append(entity)
 
-        if self.type_mapping:
-            for entity in entities:
-                entity.type_ = self.type_mapping[entity.type_]
-
         return entities
 
     @abstractmethod
