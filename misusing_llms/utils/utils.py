@@ -1,6 +1,7 @@
 import multiprocessing
 import os
 import random
+import sys
 from typing import List, Optional, Union, Dict
 
 import numpy as np
@@ -30,6 +31,19 @@ def entity_string_to_entity_dataclass(entity_string: str) -> Union[List[Entity],
         return entities
     else:
         return []
+
+
+def is_debug():
+    gettrace = getattr(sys, "gettrace", None)
+
+    if gettrace is None:
+        return False
+    else:
+        v = gettrace()
+        if v is None:
+            return False
+        else:
+            return True
 
 
 def get_balanced_devices(

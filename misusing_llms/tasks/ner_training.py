@@ -3,6 +3,7 @@ import os
 from typing import Dict, List
 
 import pytorch_lightning as pl
+import wandb
 from fluidml import Task
 from pytorch_lightning.callbacks import (
     EarlyStopping,
@@ -11,7 +12,7 @@ from pytorch_lightning.callbacks import (
 )
 from pytorch_lightning.loggers import TensorBoardLogger, WandbLogger
 from torch.utils.data import DataLoader
-from transformers import AutoTokenizer
+from transformers import AutoTokenizer, LogitsProcessorList
 
 from misusing_llms.data_classes import NERCorpus
 from misusing_llms.models import GenerativeNERModel
@@ -22,9 +23,10 @@ from misusing_llms.training import (
     ExceptionHandling,
     FluidmlCheckpointIO,
     Evaluator,
+    InformedNERDecoderLogitsProcessor,
 )
 from misusing_llms.utils.fluid_helper import log_to_file
-from misusing_llms.utils.utils import set_seeds, set_device
+from misusing_llms.utils import set_seeds, set_device, is_debug
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +36,8 @@ class NERTraining(Task):
         self,
         training_params: Dict,
         model_params: Dict,
-        seed: int = 42,
+        informed_generation: bool = False,
+        seed: int = 3141,
         warm_start: bool = False,
         wandb_logging: bool = True,
         tensorboard_logging: bool = False,
@@ -43,8 +46,11 @@ class NERTraining(Task):
 
         self.training_params = training_params
         self.model_params = model_params
+        self.informed_generation = informed_generation
         self.seed = seed
         self.warm_start = warm_start
+
+        self.combine_train_valid = self.training_params["data_loading"].pop("combine_train_valid", False)
 
         self.wandb_logging = wandb_logging
         self.tensorboard_logging = tensorboard_logging
@@ -52,7 +58,7 @@ class NERTraining(Task):
     def _init_torch_datasets(self, corpus: NERCorpus) -> Dict[str, GenerativeNERDataset]:
         datasets = {"test": GenerativeNERDataset(sentences=corpus.test)}
 
-        if self.training_params["data_loading"].pop("combine_train_valid", False):
+        if self.combine_train_valid:
             datasets["train"] = GenerativeNERDataset(sentences=corpus.train + corpus.validation)
             logger.info(
                 f"Combining training and validation set for a total training length of {len(datasets['train'])} "
@@ -80,6 +86,14 @@ class NERTraining(Task):
         batch_collator: NERBatchCollator,
     ) -> Dict[str, DataLoader]:
 
+        if is_debug():
+            logger.warning(
+                "Debug mode detected, setting num_workers=0 for torch dataloader. This allows proper debugging."
+            )
+            num_workers = 0
+        else:
+            num_workers = 10
+
         dataloaders = {}
         for split_type, split_dataset in datasets.items():
 
@@ -87,7 +101,7 @@ class NERTraining(Task):
                 dataset=split_dataset,
                 collate_fn=batch_collator,
                 shuffle=True if split_type == "train" else False,
-                num_workers=0,
+                num_workers=num_workers,
                 **self.training_params["data_loading"],
             )
 
@@ -100,7 +114,6 @@ class NERTraining(Task):
         initialised_loggers = []
 
         if self.wandb_logging:
-            # todo: run_info.run_name will be changed in the final 0.3 fluidml release
             initialised_loggers.append(WandbLogger(project=self.info.project_name, name=run_id, save_dir=run_dir))
             self._save_wandb_api_path()
 
@@ -112,8 +125,6 @@ class NERTraining(Task):
         return initialised_loggers
 
     def _save_wandb_api_path(self):
-        import wandb
-
         run_dir = self.get_store_context().run_dir
         sub_dir = os.path.relpath(wandb.run.dir, run_dir)
         self.save(
@@ -122,6 +133,20 @@ class NERTraining(Task):
             type_="json",
             sub_dir=sub_dir,
         )
+
+    def _log_hyperparameter(self, loggers):
+        # hardcoded which hyperparameter will be logged
+        hyperparameter_to_be_logged = {
+            "informed_generation": self.informed_generation,
+            "batch_size": self.training_params["data_loading"]["batch_size"],
+            "combine_train_valid": self.combine_train_valid,
+            "model_name": self.model_params["model_name"],
+        }
+        for train_logger in loggers:
+            if isinstance(train_logger, pl.loggers.tensorboard.TensorBoardLogger):
+                pass  # todo
+            elif isinstance(train_logger, pl.loggers.wandb.WandbLogger):
+                train_logger.experiment.config.update(hyperparameter_to_be_logged)
 
     def _init_model_callbacks(self) -> List:
         run_dir = self.get_store_context().run_dir
@@ -179,6 +204,14 @@ class NERTraining(Task):
             evaluator = Evaluator.from_config(entity_set=corpus.entity_set, **self.training_params["metrics"])
         else:
             evaluator = None
+        entity_type_token_ids = tokeniser(text=sorted(list(corpus.entity_set)), add_special_tokens=False).input_ids
+        if self.informed_generation:
+            logits_processor = LogitsProcessorList()
+            logits_processor.append(
+                InformedNERDecoderLogitsProcessor(entity_type_token_ids=entity_type_token_ids, t=tokeniser)
+            )
+        else:
+            logits_processor = None
 
         model = GenerativeNERModel(
             model_params=self.model_params,
@@ -187,6 +220,7 @@ class NERTraining(Task):
             # evaluator_params=self.training_params["metrics"],
             evaluator=evaluator,
             tokeniser=tokeniser,
+            logits_processor=logits_processor,
         ).to(device)
 
         try:
@@ -205,9 +239,13 @@ class NERTraining(Task):
             **self.training_params["trainer"],
         )
 
+        self._log_hyperparameter(loggers=loggers)
+
         trainer.fit(
             model=model,
             train_dataloaders=dataloaders["train"],
             val_dataloaders=dataloaders["validation"],
             ckpt_path="last" if self.warm_start else None,
         )
+
+        wandb.finish()
