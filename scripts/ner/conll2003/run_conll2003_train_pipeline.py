@@ -14,7 +14,7 @@ from misusing_llms.utils.fluid_helper import (
     MyLocalFileStore,
     TaskResource,
 )
-from misusing_llms.utils.utils import get_balanced_devices
+from misusing_llms.utils import get_balanced_devices, is_debug
 
 logger = logging.getLogger(__name__)
 
@@ -72,6 +72,7 @@ def main():
     cuda_ids = args.cuda_ids  # [1]  # [0, 1]
     warm_start = args.warm_start  # False  # continue training from an existing checkpoint
     gs_expansion_method: str = args.gs_expansion_method
+    run_name = "debug" if is_debug() else args.run_name
 
     log_dir = os.path.join(base_dir, "logging")
     os.makedirs(log_dir, exist_ok=True)
@@ -140,7 +141,7 @@ def main():
         force=force,
         results_store=results_store,
         project_name=args.project_name,
-        run_name=args.run_name,
+        run_name=run_name,
     )
 
     end = datetime.datetime.now()
