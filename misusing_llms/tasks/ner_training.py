@@ -1,6 +1,6 @@
 import logging
 import os
-from typing import Dict, List
+from typing import Dict, List, Union
 
 import pytorch_lightning as pl
 import wandb
@@ -11,6 +11,7 @@ from pytorch_lightning.callbacks import (
     LearningRateMonitor,
 )
 from pytorch_lightning.loggers import TensorBoardLogger, WandbLogger
+from pytorch_lightning.strategies import FSDPStrategy
 from torch.utils.data import DataLoader
 from transformers import AutoTokenizer, LogitsProcessorList
 
@@ -54,6 +55,8 @@ class NERTraining(Task):
 
         self.wandb_logging = wandb_logging
         self.tensorboard_logging = tensorboard_logging
+
+        self.is_subprocess = "LOCAL_RANK" in os.environ
 
     def _init_torch_datasets(self, corpus: NERCorpus) -> Dict[str, GenerativeNERDataset]:
         datasets = {"test": GenerativeNERDataset(sentences=corpus.test)}
@@ -107,67 +110,77 @@ class NERTraining(Task):
 
         return dataloaders
 
-    def _init_model_loggers(self) -> List:
-        run_dir = self.get_store_context().run_dir
-        run_id = self.id
+    def _init_model_loggers(self) -> Union[List, None]:
+        store_context = self.get_store_context()
+        if store_context and not self.is_subprocess:
+            run_dir = store_context.run_dir
+            run_id = self.id
 
-        initialised_loggers = []
+            initialised_loggers = []
 
-        if self.wandb_logging:
-            initialised_loggers.append(WandbLogger(project=self.info.project_name, name=run_id, save_dir=run_dir))
-            self._save_wandb_api_path()
+            if self.wandb_logging:
+                initialised_loggers.append(WandbLogger(project=self.info.project_name, name=run_id, save_dir=run_dir))
+                self._save_wandb_api_path()
 
-        if self.tensorboard_logging:
-            initialised_loggers.append(
-                TensorBoardLogger(save_dir=os.path.join(run_dir, "tensorboard"), name="", version="")
-            )
+            if self.tensorboard_logging:
+                initialised_loggers.append(
+                    TensorBoardLogger(save_dir=os.path.join(run_dir, "tensorboard"), name="", version="")
+                )
 
-        return initialised_loggers
+            return initialised_loggers
+        else:
+            return None
 
     def _save_wandb_api_path(self):
-        run_dir = self.get_store_context().run_dir
-        sub_dir = os.path.relpath(wandb.run.dir, run_dir)
-        self.save(
-            {"wandb_api_path": wandb.run.path},
-            "wandb_api_path",
-            type_="json",
-            sub_dir=sub_dir,
-        )
+        store_context = self.get_store_context()
+        if store_context and not self.is_subprocess:
+            run_dir = store_context.run_dir
+            sub_dir = os.path.relpath(wandb.run.dir, run_dir)
+            self.save(
+                {"wandb_api_path": wandb.run.path},
+                "wandb_api_path",
+                type_="json",
+                sub_dir=sub_dir,
+            )
 
     def _log_hyperparameter(self, loggers):
         # hardcoded which hyperparameter will be logged
-        hyperparameter_to_be_logged = {
-            "informed_generation": self.informed_generation,
-            "batch_size": self.training_params["data_loading"]["batch_size"],
-            "combine_train_valid": self.combine_train_valid,
-            "model_name": self.model_params["model_name"],
-        }
-        for train_logger in loggers:
-            if isinstance(train_logger, pl.loggers.tensorboard.TensorBoardLogger):
-                pass  # todo
-            elif isinstance(train_logger, pl.loggers.wandb.WandbLogger):
-                train_logger.experiment.config.update(hyperparameter_to_be_logged)
+        if not self.is_subprocess:
+            hyperparameter_to_be_logged = {
+                "informed_generation": self.informed_generation,
+                "batch_size": self.training_params["data_loading"]["batch_size"],
+                "combine_train_valid": self.combine_train_valid,
+                "model_name": self.model_params["model_name"],
+                "n-bit precision": self.training_params["trainer"]["precision"],
+            }
+            for train_logger in loggers:
+                if isinstance(train_logger, pl.loggers.tensorboard.TensorBoardLogger):
+                    pass  # todo
+                elif isinstance(train_logger, pl.loggers.wandb.WandbLogger):
+                    train_logger.experiment.config.update(hyperparameter_to_be_logged)
 
     def _init_model_callbacks(self) -> List:
-        run_dir = self.get_store_context().run_dir
-
-        model_checkpoint = ModelCheckpoint(
-            monitor=self.training_params["callbacks"].monitor_var,
-            dirpath=os.path.join(run_dir, "models"),
-            filename="best_model",
-            save_top_k=self.training_params["callbacks"].save_top_k,
-            verbose=True,
-            save_last=True,
-            mode=self.training_params["callbacks"].monitor_var_mode,
-        )
-        model_checkpoint.FILE_EXTENSION = ""  # handled by fluidml file store
-
         callbacks = [
             ProgressBar(),
             LearningRateMonitor(logging_interval="step"),
-            model_checkpoint,
             ExceptionHandling(),
         ]
+
+        store_context = self.get_store_context()
+        if store_context:
+            run_dir = store_context.run_dir
+
+            model_checkpoint = ModelCheckpoint(
+                monitor=self.training_params["callbacks"].monitor_var,
+                dirpath=os.path.join(run_dir, "models"),
+                filename="best_model",
+                save_top_k=self.training_params["callbacks"].save_top_k,
+                verbose=True,
+                save_last=True,
+                mode=self.training_params["callbacks"].monitor_var_mode,
+            )
+            model_checkpoint.FILE_EXTENSION = ""  # handled by fluidml file store
+            callbacks.append(model_checkpoint)
 
         if self.training_params["callbacks"].apply_early_stopping:
             callbacks.append(
@@ -182,6 +195,7 @@ class NERTraining(Task):
 
     @log_to_file
     def run(self, corpus_tokenised: NERCorpus):
+
         if isinstance(corpus_tokenised, Dict):
             logger.info("Converting corpus_tokenised dict to Corpus object.")
             corpus = NERCorpus.from_dict(corpus_tokenised)
@@ -189,10 +203,14 @@ class NERTraining(Task):
             corpus = corpus_tokenised
 
         set_seeds(self.seed)
-        device = self.resource.device
-        set_device(device)
 
-        tokeniser = AutoTokenizer.from_pretrained(self.model_params["model_name"], use_fast=True)
+        # this disables the warning that appears when using bloom (and others?)
+        # see here:
+        #   https://stackoverflow.com/questions/62691279/how-to-disable-tokenizers-parallelism-true-false-warning
+        if "bloom" in self.model_params["model_name"]:
+            os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
+        tokeniser = AutoTokenizer.from_pretrained(self.model_params["model_name"], use_fast=False)
 
         batch_collator = NERBatchCollator(pad_token_id=tokeniser.pad_token_id)
         datasets = self._init_torch_datasets(corpus=corpus)
@@ -205,6 +223,7 @@ class NERTraining(Task):
         else:
             evaluator = None
         entity_type_token_ids = tokeniser(text=sorted(list(corpus.entity_set)), add_special_tokens=False).input_ids
+
         if self.informed_generation:
             logits_processor = LogitsProcessorList()
             combine_token_id = tokeniser(
@@ -225,33 +244,54 @@ class NERTraining(Task):
         else:
             logits_processor = None
 
-        model = GenerativeNERModel(
-            model_params=self.model_params,
-            optimiser_params=self.training_params["optimiser"],
-            lr_scheduler_params=self.training_params.get("lr_scheduler", None),
-            # evaluator_params=self.training_params["metrics"],
-            evaluator=evaluator,
-            tokeniser=tokeniser,
-            logits_processor=logits_processor,
-        ).to(device)
-
-        try:
-            gpus = [int(device.split(":")[-1])]
+        if self.resource.cuda:
             accelerator = "gpu"
-        except ValueError:
-            gpus = None
+            gpus = self.resource.device
+            if isinstance(gpus, list) and len(gpus) > 1:
+                strategy = FSDPStrategy(cpu_offload=True)
+            else:
+                strategy = "auto"
+        else:
             accelerator = "cpu"
+            gpus = None
+            strategy = "auto"
 
         trainer = pl.Trainer(
             accelerator=accelerator,
             devices=gpus,
             logger=loggers,
             callbacks=callbacks,
+            strategy=strategy,
             plugins=FluidmlCheckpointIO(task=self),
             **self.training_params["trainer"],
         )
 
-        self._log_hyperparameter(loggers=loggers)
+        if loggers is not None:
+            self._log_hyperparameter(loggers=loggers)
+
+        if self.training_params.get("lr_scheduler", False):
+            total_devices = trainer.num_devices * trainer.num_nodes
+            train_batches = len(dataloaders["train"]) // total_devices
+            train_steps = (trainer.max_epochs * train_batches) // trainer.accumulate_grad_batches
+            lr_warmup = self.training_params["lr_scheduler"].pop("lr_warmup", 0.0)
+            interval = self.training_params["lr_scheduler"].pop("interval", "epoch")
+            learning_rate_scheduler_inputs = self.training_params["lr_scheduler"]
+            learning_rate_scheduler_inputs.update(
+                {"num_warmup_steps": lr_warmup * train_steps, "num_training_steps": train_steps, "interval": interval}
+            )
+        else:
+            learning_rate_scheduler_inputs = None
+
+        model = GenerativeNERModel(
+            model_params=self.model_params,
+            optimiser_params=self.training_params["optimiser"],
+            learning_rate_scheduler_inputs=learning_rate_scheduler_inputs,
+            # evaluator_params=self.training_params["metrics"],
+            evaluator=evaluator,
+            tokeniser=tokeniser,
+            logits_processor=logits_processor,
+            # do_logging=self.is_subprocess,
+        )
 
         trainer.fit(
             model=model,
@@ -260,4 +300,5 @@ class NERTraining(Task):
             ckpt_path="last" if self.warm_start else None,
         )
 
-        wandb.finish()
+        if not self.is_subprocess:
+            wandb.finish()

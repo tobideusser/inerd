@@ -5,12 +5,13 @@ import os
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Union, Optional, Dict, Callable, Any
+from typing import Union, Optional, Dict, Callable, Any, List
 
 import fsspec
 import torch
-from fluidml.storage import LocalFileStore, TypeInfo
-from pytorch_lightning.utilities.cloud_io import load as pl_load
+from fluidml.storage import LocalFileStore, TypeInfo, StoreContext
+from lightning_fabric.plugins.io import TorchCheckpointIO
+from lightning_fabric.utilities.cloud_io import _load as pl_load
 from lightning_fabric.utilities.cloud_io import get_filesystem
 from rich.logging import RichHandler
 from transformers import PreTrainedTokenizerFast
@@ -50,6 +51,8 @@ class MyLocalFileStore(LocalFileStore):
             needs_path=True,
         )
 
+        self.torch_checkpoint_io = TorchCheckpointIO()
+
     @staticmethod
     def _save_tokeniser(obj: PreTrainedTokenizerFast, path: str):
         obj.save_pretrained(save_directory=path, legacy_format=False)
@@ -58,27 +61,29 @@ class MyLocalFileStore(LocalFileStore):
     def _load_tokeniser(path: str) -> PreTrainedTokenizerFast:
         return PreTrainedTokenizerFast.from_pretrained(path)
 
-    @staticmethod
-    def _save_pl_checkpoint(checkpoint: Dict[str, Any], path: Union[str, Path]):
-        fs = get_filesystem(path)
-        fs.makedirs(os.path.dirname(path), exist_ok=True)
-        atomic_save(checkpoint, path)
+    def _save_pl_checkpoint(self, checkpoint: Dict[str, Any], path: Union[str, Path]):
+        self.torch_checkpoint_io.save_checkpoint(checkpoint=checkpoint, path=path, storage_options=None)
+        # fs = get_filesystem(path)
+        # fs.makedirs(os.path.dirname(path), exist_ok=True)
+        # atomic_save(checkpoint, path)
 
-    @staticmethod
     def _load_pl_checkpoint(
+        self,
         path: Union[str, Path],
         map_location: Optional[Callable] = lambda storage, loc: storage,
     ) -> Dict[str, Any]:
+        return self.torch_checkpoint_io.load_checkpoint(path=path, map_location=map_location)
         # Try to read the checkpoint at `path`. If not exist, do not restore checkpoint.
-        fs = get_filesystem(path)
-        if not fs.exists(path):
-            raise FileNotFoundError(f"Checkpoint at {path} not found. Aborting training.")
-        return pl_load(path, map_location=map_location)
+        # fs = get_filesystem(path)
+        # if not fs.exists(path):
+        #     raise FileNotFoundError(f"Checkpoint at {path} not found. Aborting training.")
+        # return pl_load(path, map_location=map_location)
 
 
 @dataclass
 class TaskResource:
-    device: Union[str, torch.device]
+    cuda: bool
+    device: Optional[Union[int, List[int], str]] = None
 
 
 def configure_logging(level: Union[str, int] = "INFO", log_dir: Optional[str] = None):
@@ -105,7 +110,7 @@ def add_file_handler(log_dir: str, name: str = "logs", type_: str = "txt", level
     if level not in ["DEBUG", "INFO", "WARNING", "WARN", "ERROR", "FATAL", "CRITICAL", 10, 20, 30, 40, 50]:
         raise ValueError(f'Logging level "{level}" is not supported.')
 
-    log_path = os.path.join(log_dir.run_dir, f"{name}.{type_}")
+    log_path = os.path.join(log_dir, f"{name}.{type_}")
     file_handler = logging.FileHandler(log_path)
     file_handler.setLevel(level)
     file_formatter = logging.Formatter("%(processName)s - %(asctime)s - %(levelname)s - %(message)s")
@@ -125,11 +130,14 @@ def log_to_file(func):
 
     @functools.wraps(func)
     def wrapper(self, *args, **kwargs):
-        run_dir = self.get_store_context()
-        logger.info(f"Current run dir: {run_dir}")
-        add_file_handler(run_dir)
-        result = func(self, *args, **kwargs)
-        remove_file_handler()
+        store_context = self.get_store_context()
+        if store_context:
+            logger.info(f"Current run dir: {store_context.run_dir}")
+            add_file_handler(store_context.run_dir)
+            result = func(self, *args, **kwargs)
+            remove_file_handler()
+        else:
+            result = func(self, *args, **kwargs)
         return result
 
     return wrapper

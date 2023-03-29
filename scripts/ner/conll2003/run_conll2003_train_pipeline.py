@@ -34,6 +34,12 @@ def parse_args() -> argparse.Namespace:
         nargs="+",
         help="GPU ids, e.g. `--cuda-ids 0 1`",
     )
+    parser.add_argument(
+        "--cuda-group",
+        default=None,
+        type=int,
+        help="How to group multiple GPU's, e.g. `--cuda-group 2` groups in pair of twos",
+    )
     parser.add_argument("--use-cuda", action="store_true", help="Use cuda.")
     parser.add_argument("--warm-start", action="store_true", help="Tries to warm start training.")
     parser.add_argument("--num-workers", type=int, default=1, help="Number of multiprocessing workers.")
@@ -70,13 +76,14 @@ def main():
     force = args.force  # "ModelTraining+"
     use_cuda = args.use_cuda
     cuda_ids = args.cuda_ids  # [1]  # [0, 1]
+    cuda_group = args.cuda_group
     warm_start = args.warm_start  # False  # continue training from an existing checkpoint
     gs_expansion_method: str = args.gs_expansion_method
     run_name = "debug" if is_debug() else args.run_name
 
     log_dir = os.path.join(base_dir, "logging")
     os.makedirs(log_dir, exist_ok=True)
-    configure_logging(level="INFO", log_dir=log_dir)
+    configure_logging(level="ERROR" if "LOCAL_RANK" in os.environ else "INFO", log_dir=log_dir)
 
     # get task configs
     data_parsing_cfg = config["Parsing"]
@@ -120,8 +127,11 @@ def main():
     ]
 
     # create list of resources
-    devices = get_balanced_devices(count=num_workers, use_cuda=use_cuda, cuda_ids=cuda_ids)
-    resources = [TaskResource(device=devices[i]) for i in range(num_workers)]
+    devices = get_balanced_devices(count=num_workers, use_cuda=use_cuda, cuda_ids=cuda_ids, cuda_group=cuda_group)
+    if isinstance(devices, str) and devices == "cpu":
+        resources = [TaskResource(cuda=False, device="cpu") for _ in range(num_workers)]
+    else:
+        resources = [TaskResource(cuda=True, device=devices[i]) for i in range(num_workers)]
 
     # create local file storage used for versioning
     results_store = MyLocalFileStore(base_dir=base_dir)

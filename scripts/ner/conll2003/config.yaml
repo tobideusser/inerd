@@ -1,6 +1,6 @@
 # Base directory to store all task outputs
-#base_dir: "/cluster/data/experiments/misusing_llms/conll2003_v1"
-base_dir: "/scratch/data/misusing_llms/conll2003_dev"
+base_dir: "/cluster/data/experiments/misusing_llms/conll2003_v1"
+#base_dir: "/scratch/data/misusing_llms/conll2003_dev"
 seed: &seed 3141
 
 ###########
@@ -11,7 +11,7 @@ Parsing:
   dataset: "CoNLL-2003"
   path_to_data_folders: null
   dataset_name: "CoNLL-2003"
-  debug_size: 10
+  debug_size: null
   type_mapping:
     PER: "Person"
     LOC: "Location"
@@ -22,9 +22,19 @@ Parsing:
 # Tokenisation #
 ################
 
+# models too large for one 32gb GPU:
+# "bigscience/bloom-1b7"
+# "facebook/opt-2.7b"
+
+# models fitting on one 32gb GPU:
+# "facebook/opt-1.3b"
+# "bigscience/bloom-1b1"
+# "EleutherAI/gpt-neo-1.3B"
+
+# models fitting on two 32gb GPUs with fsdp and cpu offloading:
+
 Tokenisation:
-  tokeniser_name: &modelname "facebook/opt-1.3b"
-#  tokeniser_name: &modelname "bigscience/bloom-1b1"
+  tokeniser_name: &modelname "bigscience/bloom-1b7"
   special_tokens: null
   combine_token: "\n"
 
@@ -43,7 +53,7 @@ Training:
     model_params:
       model_name: *modelname
 
-    informed_generation: true
+    informed_generation: false
 
     training_params:
       optimiser:
@@ -57,11 +67,11 @@ Training:
         lr_warmup: 0.1
 
       trainer:
-        max_epochs: 20
+        max_epochs: 10
         accumulate_grad_batches: 1 # [2, 4]  # 4
         gradient_clip_val: 1  # [1, 10]  # 10
-        precision: 32  # 16
-        amp_level: null
+        precision: 32
+#        precision: 16
         val_check_interval: 1. # 0.25  # 1.
 
       callbacks:

@@ -47,16 +47,35 @@ def is_debug():
 
 
 def get_balanced_devices(
-    count: Optional[int] = None, use_cuda: bool = True, cuda_ids: Optional[List[int]] = None
-) -> List[str]:
-    count = count if count is not None else multiprocessing.cpu_count()
+    count: Optional[int] = None,
+    use_cuda: bool = True,
+    cuda_ids: Optional[List[int]] = None,
+    cuda_group: Optional[int] = None,
+) -> Union[List[str], List[List[int]]]:
     if use_cuda and torch.cuda.is_available():
-        if cuda_ids is not None:
-            devices = [f"cuda:{id_}" for id_ in cuda_ids]
+        if cuda_group is not None and cuda_group > 1:
+            if not use_cuda:
+                raise ValueError(f"cuda_groups is set to {cuda_group}, but use_cuda is set to false.")
+            if cuda_ids is not None:
+                if (len(cuda_ids) / cuda_group).is_integer():
+                    devices = [cuda_ids[x : x + cuda_group] for x in range(0, len(cuda_ids), cuda_group)]
+                    # devices = [[f"cuda:{id_}" for id_ in id_group] for id_group in cuda_ids_grouped]
+                else:
+                    raise ValueError(
+                        f"cuda_groups is set to {cuda_group}, but cuda_ids is of length {len(cuda_ids)} and thus not "
+                        f"divisible by {cuda_group}."
+                    )
+            else:
+                raise NotImplementedError
+                # pass  # todo here! -> devices = [f"cuda:{id_}" for id_ in range(torch.cuda.device_count())]
         else:
-            devices = [f"cuda:{id_}" for id_ in range(torch.cuda.device_count())]
+            if cuda_ids is not None:
+                devices = [cuda_ids]
+            else:
+                devices = [[id_] for id_ in range(torch.cuda.device_count())]
     else:
         devices = ["cpu"]
+    count = count if count is not None else multiprocessing.cpu_count()
     factor = int(count / len(devices))
     remainder = count % len(devices)
     devices = devices * factor + devices[:remainder]

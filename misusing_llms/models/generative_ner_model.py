@@ -20,24 +20,28 @@ class GenerativeNERModel(pl.LightningModule):
         self,
         model_params: Dict,
         tokeniser: PreTrainedTokenizerFast,
+        is_multigpu: bool = True,
         logits_processor: Optional[LogitsProcessorList] = None,
         optimiser_params: Optional[Dict] = None,
-        lr_scheduler_params: Optional[Dict] = None,
+        learning_rate_scheduler_inputs: Optional[Dict] = None,
         evaluator_params: Optional[Dict] = None,
         evaluator: Optional[Evaluator] = None,
     ):
         super().__init__()
         model_name = model_params["model_name"]
+
         self.model = AutoModelForCausalLM.from_pretrained(model_name)
         self.tokeniser = tokeniser
         self.logits_processor = logits_processor
 
         self.optimiser_params = optimiser_params
-        self.lr_scheduler_params = lr_scheduler_params
+        self.learning_rate_scheduler_inputs = learning_rate_scheduler_inputs
         if evaluator is not None:
             self.evaluator = evaluator
         elif evaluator_params is not None:
             self.evaluator = Evaluator.from_config(**evaluator_params)
+
+        self.is_multigpu = is_multigpu
 
     def generate(self, batch) -> Dict:
         predictions = self.model.generate(
@@ -61,7 +65,7 @@ class GenerativeNERModel(pl.LightningModule):
         # update metrics
         self.evaluator.update(self._detach_tensors_in_dict(step_output))
 
-    def validation_epoch_end(self, outputs: Dict) -> None:
+    def on_validation_epoch_end(self) -> None:
         # compute and log metrics
         metrics = self.evaluator.compute(reset=True)
         self.log_metrics(metrics, split="valid")
@@ -76,7 +80,7 @@ class GenerativeNERModel(pl.LightningModule):
         logits = model_output.logits
         predictions = torch.argmax(logits, dim=-1)
 
-        batch["logits"] = logits
+        # batch["logits"] = logits  # logits not needed? just eats all the RAM?
         batch["loss"] = model_output.loss
         batch["predictions"] = predictions
         batch["output_tokens"] = [self.tokeniser.convert_ids_to_tokens(p) for p in torch.unbind(predictions, dim=0)]
@@ -97,9 +101,10 @@ class GenerativeNERModel(pl.LightningModule):
             "train-loss-step",
             loss,
             batch_size=self.trainer.train_dataloader.loaders.batch_size,
+            sync_dist=self.is_multigpu,
         )
 
-    def training_epoch_end(self, outputs: Dict) -> None:
+    def on_train_epoch_end(self) -> None:
         # compute and log metrics
         metrics = self.evaluator.compute(reset=True)
         self.log_metrics(metrics, split="train")
@@ -109,7 +114,7 @@ class GenerativeNERModel(pl.LightningModule):
             if isinstance(v, dict):
                 self._log_summary_dict(name=split + "-" + k, summary_dict=v)
             else:
-                self.log(name=split + "-" + k, value=v)
+                self.log(name=split + "-" + k, value=v, sync_dist=self.is_multigpu)
 
     def _log_summary_dict(self, name: str, summary_dict: Dict):
         # use pandas to format as a human-readable table
@@ -121,7 +126,7 @@ class GenerativeNERModel(pl.LightningModule):
             elif isinstance(train_logger, pl.loggers.wandb.WandbLogger):
                 train_logger.log_table(key=name, dataframe=table, step=self.global_step)
             else:
-                logger.error(f"pl.Trainer.logger of type {type(train_logger)} can not store text.")
+                logger.warning(f"pl.Trainer.logger of type {type(train_logger)} can not store text.")
 
     @staticmethod
     def _detach_tensors_in_dict(d: Dict) -> Dict:
@@ -131,21 +136,11 @@ class GenerativeNERModel(pl.LightningModule):
         return d
 
     def configure_optimizers(self):
-        optimiser = Optimiser.from_config(params=self.parameters(), **self.optimiser_params)
-        self.trainer.reset_train_dataloader(self)
+        optimiser = Optimiser.from_config(params=self.trainer.model.parameters(), **self.optimiser_params)
 
-        if self.lr_scheduler_params is not None:
-            total_devices = self.trainer.num_devices * self.trainer.num_nodes
-            train_batches = len(self.trainer.train_dataloader) // total_devices
-            train_steps = (self.trainer.max_epochs * train_batches) // self.trainer.accumulate_grad_batches
-            lr_warmup = self.lr_scheduler_params.pop("lr_warmup", 0.0)
-            interval = self.lr_scheduler_params.pop("interval", "epoch")
-            lr_scheduler = LearningRateScheduler.from_config(
-                optimiser=optimiser,
-                num_warmup_steps=lr_warmup * train_steps,
-                num_training_steps=train_steps,
-                **self.lr_scheduler_params,
-            )
+        if self.learning_rate_scheduler_inputs is not None:
+            interval = self.learning_rate_scheduler_inputs.pop("interval", "epoch")
+            lr_scheduler = LearningRateScheduler.from_config(optimiser=optimiser, **self.learning_rate_scheduler_inputs)
 
             scheduler = {
                 "scheduler": lr_scheduler,
