@@ -61,9 +61,9 @@ class GenerativeNERModel(pl.LightningModule):
         # add "informed" greedy decoding? like in kpi bert?
         return self.generate(batch)
 
-    def validation_step_end(self, step_output: Dict) -> None:
+    def on_validation_batch_end(self, outputs, batch, batch_idx, dataloader_idx=0) -> None:
         # update metrics
-        self.evaluator.update(self._detach_tensors_in_dict(step_output))
+        self.evaluator.update(self._detach_tensors_in_dict(outputs))
 
     def on_validation_epoch_end(self) -> None:
         # compute and log metrics
@@ -93,15 +93,15 @@ class GenerativeNERModel(pl.LightningModule):
 
         return batch
 
-    def training_step_end(self, step_output: Dict) -> None:
+    def on_train_batch_end(self, outputs, batch, batch_idx: int) -> None:
         # update metrics
-        self.evaluator.update(self._detach_tensors_in_dict(step_output))
-        loss = float(step_output["loss"])
+        self.evaluator.update(self._detach_tensors_in_dict(outputs))
+        loss = float(outputs["loss"])
         self.log(
             "train-loss-step",
             loss,
-            batch_size=self.trainer.train_dataloader.loaders.batch_size,
-            sync_dist=self.is_multigpu,
+            batch_size=self.trainer.train_dataloader.batch_size,
+            rank_zero_only=self.is_multigpu,
         )
 
     def on_train_epoch_end(self) -> None:
@@ -114,7 +114,7 @@ class GenerativeNERModel(pl.LightningModule):
             if isinstance(v, dict):
                 self._log_summary_dict(name=split + "-" + k, summary_dict=v)
             else:
-                self.log(name=split + "-" + k, value=v, sync_dist=self.is_multigpu)
+                self.log(name=split + "-" + k, value=v, rank_zero_only=self.is_multigpu)
 
     def _log_summary_dict(self, name: str, summary_dict: Dict):
         # use pandas to format as a human-readable table

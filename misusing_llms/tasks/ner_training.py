@@ -290,6 +290,7 @@ class NERTraining(Task):
             evaluator=evaluator,
             tokeniser=tokeniser,
             logits_processor=logits_processor,
+            is_multigpu=True if strategy != "auto" else False,
             # do_logging=self.is_subprocess,
         )
 

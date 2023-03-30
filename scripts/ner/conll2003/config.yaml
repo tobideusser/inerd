@@ -34,7 +34,7 @@ Parsing:
 # models fitting on two 32gb GPUs with fsdp and cpu offloading:
 
 Tokenisation:
-  tokeniser_name: &modelname "bigscience/bloom-1b7"
+  tokeniser_name: &modelname "facebook/opt-2.7b"
   special_tokens: null
   combine_token: "\n"
 
@@ -61,10 +61,10 @@ Training:
         lr: 1.e-5
         weight_decay: 0.01
 
-      lr_scheduler:
-        type_: 'lin_warmup'
-        interval: 'step'
-        lr_warmup: 0.1
+#      lr_scheduler:
+#        type_: 'lin_warmup'
+#        interval: 'step'
+#        lr_warmup: 0.1
 
       trainer:
         max_epochs: 10
