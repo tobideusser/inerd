@@ -1,6 +1,6 @@
 # Base directory to store all task outputs
-base_dir: "/cluster/data/experiments/misusing_llms/conll2003_v1"
-#base_dir: "/scratch/data/misusing_llms/conll2003_dev"
+#base_dir: "/cluster/data/experiments/misusing_llms/conll2003_v1"
+base_dir: "/scratch/data/misusing_llms/conll2003_dev"
 seed: &seed 3141
 
 ###########
@@ -11,7 +11,7 @@ Parsing:
   dataset: "CoNLL-2003"
   path_to_data_folders: null
   dataset_name: "CoNLL-2003"
-  debug_size: null
+  debug_size: 10
   type_mapping:
     PER: "Person"
     LOC: "Location"
@@ -30,11 +30,12 @@ Parsing:
 # "facebook/opt-1.3b"
 # "bigscience/bloom-1b1"
 # "EleutherAI/gpt-neo-1.3B"
+# "bigscience/bloom-560m"
 
 # models fitting on two 32gb GPUs with fsdp and cpu offloading:
 
 Tokenisation:
-  tokeniser_name: &modelname "facebook/opt-2.7b"
+  tokeniser_name: &modelname "bigscience/bloom-560m"
   special_tokens: null
   combine_token: "\n"
 
@@ -53,7 +54,7 @@ Training:
     model_params:
       model_name: *modelname
 
-    informed_generation: false
+    informed_generation: true
 
     training_params:
       optimiser:

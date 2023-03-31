@@ -222,23 +222,25 @@ class NERTraining(Task):
             evaluator = Evaluator.from_config(entity_set=corpus.entity_set, **self.training_params["metrics"])
         else:
             evaluator = None
-        entity_type_token_ids = tokeniser(text=sorted(list(corpus.entity_set)), add_special_tokens=False).input_ids
+        # entity_type_token_ids = tokeniser(text=sorted(list(corpus.entity_set)), add_special_tokens=False).input_ids
 
         if self.informed_generation:
             logits_processor = LogitsProcessorList()
-            combine_token_id = tokeniser(
+            combine_token = (
                 self.unique_config["Tokenisation"].get("combine_token", "\n")
                 if "Tokenisation" in self.unique_config
-                else "\n",
-                add_special_tokens=False,
-            ).input_ids[0]
+                else "\n"
+            )
+            entity_type_tokens = sorted(list(corpus.entity_set))
+
             logits_processor.append(
                 InformedNERDecoderLogitsProcessor(
-                    entity_type_token_ids=entity_type_token_ids,
-                    t=tokeniser,
-                    combine_token_id=combine_token_id,
-                    entity_separator_token_id=tokeniser(";", add_special_tokens=False).input_ids[0],
-                    type_content_separator_token_id=tokeniser(":", add_special_tokens=False).input_ids[0],
+                    entity_type_tokens=entity_type_tokens,
+                    vocab_size=tokeniser.vocab_size,
+                    tokeniser=tokeniser,
+                    combine_token=combine_token,
+                    entity_separator_token=";",
+                    type_content_separator_token=":",
                 )
             )
         else:

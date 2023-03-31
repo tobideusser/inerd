@@ -101,7 +101,7 @@ class GenerativeNERModel(pl.LightningModule):
             "train-loss-step",
             loss,
             batch_size=self.trainer.train_dataloader.batch_size,
-            rank_zero_only=self.is_multigpu,
+            sync_dist=self.is_multigpu,
         )
 
     def on_train_epoch_end(self) -> None:
@@ -114,7 +114,7 @@ class GenerativeNERModel(pl.LightningModule):
             if isinstance(v, dict):
                 self._log_summary_dict(name=split + "-" + k, summary_dict=v)
             else:
-                self.log(name=split + "-" + k, value=v, rank_zero_only=self.is_multigpu)
+                self.log(name=split + "-" + k, value=v, sync_dist=self.is_multigpu)
 
     def _log_summary_dict(self, name: str, summary_dict: Dict):
         # use pandas to format as a human-readable table
