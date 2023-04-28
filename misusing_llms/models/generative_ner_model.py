@@ -1,16 +1,21 @@
-# import copy
-# import inspect
+import os
+
 import logging
-from typing import Dict, Optional
+from typing import Dict, Optional, List, Set
 
 import pandas as pd
+import numpy as np
 import pytorch_lightning as pl
 import torch
 from transformers import AutoModelForCausalLM, PreTrainedTokenizerFast
+from deepspeed.ops.adam import DeepSpeedCPUAdam
+from pytorch_lightning.utilities import rank_zero_only
+
 
 from transformers.generation import GenerationConfig, LogitsProcessorList, StoppingCriteriaList
 
 from misusing_llms.training import Optimiser, LearningRateScheduler, Evaluator
+from misusing_llms.utils import entity_string_to_entity_dataclass
 
 logger = logging.getLogger(__name__)
 
@@ -21,14 +26,17 @@ class GenerativeNERModel(pl.LightningModule):
         model_params: Dict,
         tokeniser: PreTrainedTokenizerFast,
         is_multigpu: bool = True,
+        is_mainprocess: bool = True,
         logits_processor: Optional[LogitsProcessorList] = None,
         optimiser_params: Optional[Dict] = None,
         learning_rate_scheduler_inputs: Optional[Dict] = None,
         evaluator_params: Optional[Dict] = None,
         evaluator: Optional[Evaluator] = None,
+        entity_set: Optional[Set[str]] = None,
     ):
         super().__init__()
         model_name = model_params["model_name"]
+        self.entity_set = entity_set
 
         self.model = AutoModelForCausalLM.from_pretrained(model_name)
         self.tokeniser = tokeniser
@@ -42,38 +50,63 @@ class GenerativeNERModel(pl.LightningModule):
             self.evaluator = Evaluator.from_config(**evaluator_params)
 
         self.is_multigpu = is_multigpu
+        self.is_mainprocess = is_mainprocess
+
+        self.ground_truth_entities: List[List[dict]] = []
+        self.entity_strings_predicted: List[str] = []
 
     def generate(self, batch) -> Dict:
         predictions = self.model.generate(
             input_ids=batch["prompt_ids"],
             num_beams=1,
             do_sample=False,
-            max_length=batch["max_length_prompt_ids"] + 100,
+            # max_length=batch["max_length_prompt_ids"] + 100,
             logits_processor=self.logits_processor,
+        )
+        batch["predictions"] = predictions
+        batch["output_tokens"] = [self.tokeniser.convert_ids_to_tokens(p) for p in torch.unbind(predictions, dim=0)]
+        # entity_string_token_ids_predicted = predictions[:, batch["max_length_prompt_ids"] :]
+        # batch["entity_string_predicted"] = self.tokeniser.batch_decode(entity_string_token_ids_predicted)
+        return batch
+
+    def validation_step(self, batch: Dict, batch_idx: int) -> Dict:
+        predictions = self.model.generate(
+            input_ids=batch["prompt_ids"],
+            num_beams=1,
+            do_sample=False,
+            max_new_tokens=54,
+            # max_length=200,
+            # max_length=batch["max_length_prompt_ids"] + 100,
+            logits_processor=self.logits_processor,
+            synced_gpus=self.is_multigpu,
         )
         batch["predictions"] = predictions
         batch["output_tokens"] = [self.tokeniser.convert_ids_to_tokens(p) for p in torch.unbind(predictions, dim=0)]
         entity_string_token_ids_predicted = predictions[:, batch["max_length_prompt_ids"] :]
         batch["entity_string_predicted"] = self.tokeniser.batch_decode(entity_string_token_ids_predicted)
+        batch = self._detach_tensors_in_dict(batch)
         return batch
 
-    def validation_step(self, batch: Dict, batch_idx: int) -> Dict:
-        # add "informed" greedy decoding? like in kpi bert?
-        return self.generate(batch)
-
     def on_validation_batch_end(self, outputs, batch, batch_idx, dataloader_idx=0) -> None:
+        # if self.is_mainprocess:
         # update metrics
-        self.evaluator.update(self._detach_tensors_in_dict(outputs))
+        # outputs = self.broadcast(outputs)
+        # outputs = self.all_gather(outputs)
+        self.ground_truth_entities.extend(outputs["ground_truth_entities"])
+        self.entity_strings_predicted.extend(outputs["entity_string_predicted"])
+        # self.evaluator.update(outputs)
 
     def on_validation_epoch_end(self) -> None:
+
         # compute and log metrics
-        metrics = self.evaluator.compute(reset=True)
-        self.log_metrics(metrics, split="valid")
+        # metrics = self.evaluator.compute(reset=True)
+        self.log_metrics(split="valid")
 
     def training_step(self, batch: Dict, batch_idx: int) -> Dict:
         return self.forward(batch)
 
     def forward(self, batch) -> Dict:
+        # return self.model(input_ids=batch["input_ids"], labels=batch.get("labels", None))
         labels = batch.get("labels", None)
         model_output = self.model(input_ids=batch["input_ids"], labels=labels)
 
@@ -94,27 +127,51 @@ class GenerativeNERModel(pl.LightningModule):
         return batch
 
     def on_train_batch_end(self, outputs, batch, batch_idx: int) -> None:
+        # logits = outputs["logits"]
+        # predictions = torch.argmax(logits, dim=-1)
+        # # copybatch = copy.deepcopy(batch)
+        # batch["predictions"] = predictions
+        # batch["output_tokens"] = [self.tokeniser.convert_ids_to_tokens(p) for p in torch.unbind(predictions, dim=0)]
+        # entity_string_token_ids_predicted = [
+        #     torch.masked_select(p, batch["labels"] != -100) for p in torch.unbind(predictions, dim=0)
+        # ]
+        # batch["entity_string_predicted"] = self.tokeniser.batch_decode(entity_string_token_ids_predicted)
         # update metrics
-        self.evaluator.update(self._detach_tensors_in_dict(outputs))
+        # if self.is_mainprocess:
+        # self.evaluator.update(self._detach_tensors_in_dict(outputs))
         loss = float(outputs["loss"])
         self.log(
             "train-loss-step",
             loss,
             batch_size=self.trainer.train_dataloader.batch_size,
+            # rank_zero_only=True,
             sync_dist=self.is_multigpu,
         )
 
-    def on_train_epoch_end(self) -> None:
-        # compute and log metrics
-        metrics = self.evaluator.compute(reset=True)
-        self.log_metrics(metrics, split="train")
+    # def on_train_epoch_end(self) -> None:
+    #     # if self.is_mainprocess:
+    #     # compute and log metrics
+    #     # metrics = self.evaluator.compute(reset=True)
+    #     self.log_metrics(split="train")
 
-    def log_metrics(self, metrics: Dict, split: str):
+    def log_metrics(self, split: str):
+        # saved_obs = self.evaluator.saved_observations
+        # if saved_obs > 0:
+        a = len(self.entity_strings_predicted)
+        metrics = self.compute_metrics(reset=True)
+        # metrics = self.all_gather(metrics)
+        logger.info(f"saved_obs: {a} | f1: {metrics['ner_micro_f1']}")
         for k, v in metrics.items():
             if isinstance(v, dict):
-                self._log_summary_dict(name=split + "-" + k, summary_dict=v)
+                # self._log_summary_dict(name=split + "-" + k, summary_dict=v)
+                pass
             else:
-                self.log(name=split + "-" + k, value=v, sync_dist=self.is_multigpu)
+                self.log(
+                    name=split + "-" + k,
+                    value=v,
+                    sync_dist=self.is_multigpu,
+                    # rank_zero_only=True,
+                )
 
     def _log_summary_dict(self, name: str, summary_dict: Dict):
         # use pandas to format as a human-readable table
@@ -135,8 +192,106 @@ class GenerativeNERModel(pl.LightningModule):
                 d[k] = v.detach().cpu()
         return d
 
+    def compute_metrics(self, reset=False):
+        assert len(self.ground_truth_entities) == len(self.entity_strings_predicted)
+
+        statistics = {ent: {"tp": 0, "fp": 0, "fn": 0, "support": 0} for ent in self.entity_set}
+        clf_report = {}
+
+        predicted_entities = [entity_string_to_entity_dataclass(es) for es in self.entity_strings_predicted]
+
+        # Count TP, FP and FN per type
+        for prediction, ground_truth in zip(predicted_entities, self.ground_truth_entities):
+            for entity_type in self.entity_set:
+                pred_ents = {ent.words for ent in prediction if ent.type_ == entity_type}
+                gt_ents = {" ".join(ent["words"]) for ent in ground_truth if ent["type_"] == entity_type}
+                statistics[entity_type]["support"] += len(gt_ents)
+                statistics[entity_type]["tp"] += len(pred_ents & gt_ents)
+                statistics[entity_type]["fp"] += len(pred_ents - gt_ents)
+                statistics[entity_type]["fn"] += len(gt_ents - pred_ents)
+
+        # Compute per entity Precision / Recall / F1 / Support
+        for entity_type in statistics.keys():
+            if statistics[entity_type]["tp"]:
+                precision = (
+                    100
+                    * statistics[entity_type]["tp"]
+                    / (statistics[entity_type]["fp"] + statistics[entity_type]["tp"])
+                )
+                recall = (
+                    100
+                    * statistics[entity_type]["tp"]
+                    / (statistics[entity_type]["fn"] + statistics[entity_type]["tp"])
+                )
+            else:
+                precision, recall = 0.0, 0.0
+
+            if not precision + recall == 0:
+                f1 = 2 * precision * recall / (precision + recall)
+            else:
+                f1 = 0.0
+
+            support = statistics[entity_type]["support"]
+            clf_report[entity_type] = {"Precision": precision, "Recall": recall, "F1": f1, "Support": support}
+
+        # Sort clf report descending
+        clf_report = dict(sorted(clf_report.items(), key=lambda item: item[1]["Support"], reverse=True))
+
+        # Compute micro F1 Scores
+        tp_all = sum([statistics[entity_type]["tp"] for entity_type in self.entity_set])
+        fp_all = sum([statistics[entity_type]["fp"] for entity_type in self.entity_set])
+        fn_all = sum([statistics[entity_type]["fn"] for entity_type in self.entity_set])
+        support_all = sum([statistics[entity_type]["support"] for entity_type in self.entity_set])
+
+        if tp_all:
+            micro_precision = 100 * tp_all / (tp_all + fp_all)
+            micro_recall = 100 * tp_all / (tp_all + fn_all)
+            micro_f1 = 2 * micro_precision * micro_recall / (micro_precision + micro_recall)
+
+        else:
+            micro_precision, micro_recall, micro_f1 = 0.0, 0.0, 0.0
+
+        clf_report["micro avg"] = {
+            "Precision": micro_precision,
+            "Recall": micro_recall,
+            "F1": micro_f1,
+            "Support": support_all,
+        }
+
+        # Compute Macro F1 Scores
+        macro_precision = np.mean(
+            [
+                clf_report[entity_type]["Precision"]
+                for entity_type in self.entity_set
+                if clf_report[entity_type]["Support"] > 0
+            ]
+        )
+        macro_recall = np.mean(
+            [
+                clf_report[entity_type]["Recall"]
+                for entity_type in self.entity_set
+                if clf_report[entity_type]["Support"] > 0
+            ]
+        )
+        macro_f1 = np.mean(
+            [clf_report[entity_type]["F1"] for entity_type in self.entity_set if clf_report[entity_type]["Support"] > 0]
+        )
+
+        clf_report["macro avg"] = {
+            "Precision": macro_precision,
+            "Recall": macro_recall,
+            "F1": macro_f1,
+            "Support": support_all,
+        }
+        if reset:
+            self.entity_strings_predicted = []
+            self.ground_truth_entities = []
+        return {"ner_clf_report": clf_report, "ner_micro_f1": micro_f1, "ner_macro_f1": macro_f1}
+
     def configure_optimizers(self):
-        optimiser = Optimiser.from_config(params=self.trainer.model.parameters(), **self.optimiser_params)
+        optimiser = Optimiser.from_config(
+            params=self.trainer.model.parameters(), multigpu=self.is_multigpu, **self.optimiser_params
+        )
 
         if self.learning_rate_scheduler_inputs is not None:
             interval = self.learning_rate_scheduler_inputs.pop("interval", "epoch")

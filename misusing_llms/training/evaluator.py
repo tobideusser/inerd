@@ -12,6 +12,10 @@ class Evaluator:
     def metric_names(self) -> List:
         return list(self.metrics.keys())
 
+    @property
+    def saved_observations(self) -> int:
+        return list(self.metrics.values())[0].saved_observations
+
     @classmethod
     def from_config(cls, entity_set: Set[str], **evaluator_params) -> "Evaluator":
 

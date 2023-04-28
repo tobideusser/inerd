@@ -1,6 +1,7 @@
 # Base directory to store all task outputs
 #base_dir: "/cluster/data/experiments/misusing_llms/conll2003_v1"
-base_dir: "/scratch/data/misusing_llms/conll2003_dev"
+#base_dir: "/scratch/data/misusing_llms/conll2003_dev"
+base_dir: "/cluster/data/experiments/misusing_llms/conll2003_fsdp"
 seed: &seed 3141
 
 ###########
@@ -11,7 +12,7 @@ Parsing:
   dataset: "CoNLL-2003"
   path_to_data_folders: null
   dataset_name: "CoNLL-2003"
-  debug_size: 10
+  debug_size: null
   type_mapping:
     PER: "Person"
     LOC: "Location"
@@ -33,9 +34,14 @@ Parsing:
 # "bigscience/bloom-560m"
 
 # models fitting on two 32gb GPUs with fsdp and cpu offloading:
+# "bigscience/bloom-1b7"
+# "facebook/opt-2.7b"
+
+# models not fitting on four 32gb GPUs with fsdp and cpu offl oading:
+# "bigscience/bloom-3b"
 
 Tokenisation:
-  tokeniser_name: &modelname "bigscience/bloom-560m"
+  tokeniser_name: &modelname "bigscience/bloom-1b7"
   special_tokens: null
   combine_token: "\n"
 
@@ -43,6 +49,20 @@ Tokenisation:
 ##################
 # Model Training #
 ##################
+
+## HF Trainer
+#Training:
+#  model_name: *modelname
+#  combine_train_valid: false
+#  validate_on_test_set: false
+#  huggingface_trainer_params:
+#    # see https://huggingface.co/docs/transformers/v4.28.1/en/main_classes/trainer#transformers.TrainingArguments
+#    per_device_train_batch_size: 8
+#    per_device_eval_batch_size: 8
+#    num_train_epochs: 2
+#    gradient_accumulation_steps: 1
+#    learning_rate: 1.e-5
+#    weight_decay: 0
 
 Training:
 
@@ -54,7 +74,7 @@ Training:
     model_params:
       model_name: *modelname
 
-    informed_generation: true
+    informed_generation: false
 
     training_params:
       optimiser:
@@ -91,6 +111,6 @@ Training:
 
       data_loading:
         batch_size: 2
-        drop_last: false
+#        drop_last: false
         combine_train_valid: false
         validate_on_test_set: false

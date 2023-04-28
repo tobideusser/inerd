@@ -9,9 +9,14 @@ from misusing_llms.data_classes import Entity
 from misusing_llms.utils import entity_string_to_entity_dataclass
 
 
+def compute_metrics(eval_pred):
+    pass
+
+
 class Metric(ABC):
     def __init__(self, name: str):
         self.name = name
+        self.saved_observations = 0
 
     @classmethod
     def from_config(cls, type_: str, *args, **kwargs):
@@ -53,12 +58,13 @@ class NERF1(Metric):
 
         self.entity_set = entity_set
 
-        self.ground_truth_entities: List[List[Entity]] = []
+        self.ground_truth_entities: List[List[dict]] = []
         self.entity_strings_predicted: List[str] = []
 
-    def update(self, ground_truth_entities: List[List[Entity]], entity_string_predicted: List[str]):
+    def update(self, ground_truth_entities: List[List[dict]], entity_string_predicted: List[str]):
         self.ground_truth_entities.extend(ground_truth_entities)
         self.entity_strings_predicted.extend(entity_string_predicted)
+        self.saved_observations += len(entity_string_predicted)
 
     def compute(self):
         assert len(self.ground_truth_entities) == len(self.entity_strings_predicted)
@@ -72,7 +78,7 @@ class NERF1(Metric):
         for prediction, ground_truth in zip(predicted_entities, self.ground_truth_entities):
             for entity_type in self.entity_set:
                 pred_ents = {ent.words for ent in prediction if ent.type_ == entity_type}
-                gt_ents = {" ".join(ent.words) for ent in ground_truth if ent.type_ == entity_type}
+                gt_ents = {" ".join(ent["words"]) for ent in ground_truth if ent["type_"] == entity_type}
                 statistics[entity_type]["support"] += len(gt_ents)
                 statistics[entity_type]["tp"] += len(pred_ents & gt_ents)
                 statistics[entity_type]["fp"] += len(pred_ents - gt_ents)
@@ -157,6 +163,7 @@ class NERF1(Metric):
     def reset(self):
         self.ground_truth_entities = []
         self.entity_strings_predicted = []
+        self.saved_observations = 0
 
 
 class BLEU(Metric):

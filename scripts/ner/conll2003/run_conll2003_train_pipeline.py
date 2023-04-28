@@ -8,7 +8,7 @@ from fluidml import Flow
 from fluidml.flow import TaskSpec
 
 from misusing_llms import project_path
-from misusing_llms.tasks import Parsing, Tokenisation, NERTraining
+from misusing_llms.tasks import Parsing, Tokenisation, NERTraining, DS_NERTraining, HFNERTraining
 from misusing_llms.utils.fluid_helper import (
     configure_logging,
     MyLocalFileStore,
@@ -65,6 +65,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def main():
+    # os.environ["CUDA_VISIBLE_DEVICES"] = "5,6"
     args = parse_args()
 
     config = yaml.safe_load(open(args.config, "r"))
@@ -80,6 +81,10 @@ def main():
     warm_start = args.warm_start  # False  # continue training from an existing checkpoint
     gs_expansion_method: str = args.gs_expansion_method
     run_name = "debug" if is_debug() else args.run_name
+
+    # fixes pytorch memory leak
+    os.environ["CUDA_VISIBLE_DEVICES"] = ",".join([str(cuda_id) for cuda_id in cuda_ids])
+    cuda_ids = list(range(len(cuda_ids)))
 
     log_dir = os.path.join(base_dir, "logging")
     os.makedirs(log_dir, exist_ok=True)

@@ -34,7 +34,7 @@ class InformedNERDecoderLogitsProcessor(LogitsProcessor):
         self._mask_rule1 = None
         self._mask_rule2 = None
 
-    def _tokenise_with_leading_space(self, text: str) -> List[List[str]]:
+    def _tokenise_with_leading_space(self, text: str) -> List[List[int]]:
         """tokenises the str input, once without a leading space and once with leading space"""
         without_leading_space = self.tokeniser(text=text).input_ids
         with_leading_space = self.tokeniser(text=" " + text).input_ids

@@ -2,6 +2,7 @@ import logging
 import os
 from typing import Dict, List, Union
 
+import torch
 import pytorch_lightning as pl
 import wandb
 from fluidml import Task
@@ -11,8 +12,8 @@ from pytorch_lightning.callbacks import (
     LearningRateMonitor,
 )
 from pytorch_lightning.loggers import TensorBoardLogger, WandbLogger
-from pytorch_lightning.strategies import FSDPStrategy
-from torch.utils.data import DataLoader
+from pytorch_lightning.strategies import FSDPStrategy, DeepSpeedStrategy
+from torch.utils.data import DataLoader, Dataset
 from transformers import AutoTokenizer, LogitsProcessorList
 
 from misusing_llms.data_classes import NERCorpus
@@ -30,6 +31,32 @@ from misusing_llms.utils.fluid_helper import log_to_file
 from misusing_llms.utils import set_seeds, set_device, is_debug
 
 logger = logging.getLogger(__name__)
+
+
+# create toy dataset
+class HelloThereDataset(Dataset):
+    def __init__(self, length=16):
+        self.prompt = "Hello There."
+        self.answer = "General Kenobi."
+        self.tokeniser = AutoTokenizer.from_pretrained("bigscience/bloom-1b7")
+        self.length = length
+
+    def __len__(self):
+        return self.length
+
+    def __getitem__(self, idx) -> Dict:
+        input_ids = self.tokeniser(self.prompt + " " + self.answer).input_ids
+        labels = [-100] * 3 + input_ids[3:]
+        prompt_ids = input_ids[:3]
+        return {"input_ids": input_ids, "labels": labels, "prompt_ids": prompt_ids}
+
+
+def collate(batch):
+    return {
+        "input_ids": torch.stack([torch.tensor(element["input_ids"]) for element in batch]),
+        "labels": torch.stack([torch.tensor(element["labels"]) for element in batch]),
+        "prompt_ids": torch.stack([torch.tensor(element["prompt_ids"]) for element in batch]),
+    }
 
 
 class NERTraining(Task):
@@ -95,7 +122,7 @@ class NERTraining(Task):
             )
             num_workers = 0
         else:
-            num_workers = 10
+            num_workers = 25
 
         dataloaders = {}
         for split_type, split_dataset in datasets.items():
@@ -105,6 +132,7 @@ class NERTraining(Task):
                 collate_fn=batch_collator,
                 shuffle=True if split_type == "train" else False,
                 num_workers=num_workers,
+                # drop_last=True,
                 **self.training_params["data_loading"],
             )
 
@@ -170,6 +198,7 @@ class NERTraining(Task):
         if store_context:
             run_dir = store_context.run_dir
 
+            # if not self.is_subprocess:
             model_checkpoint = ModelCheckpoint(
                 monitor=self.training_params["callbacks"].monitor_var,
                 dirpath=os.path.join(run_dir, "models"),
@@ -183,13 +212,14 @@ class NERTraining(Task):
             callbacks.append(model_checkpoint)
 
         if self.training_params["callbacks"].apply_early_stopping:
-            callbacks.append(
-                EarlyStopping(
-                    monitor=self.training_params["callbacks"].monitor_var,
-                    mode=self.training_params["callbacks"].monitor_var_mode,
-                    patience=self.training_params["callbacks"].patience,
+            if not self.is_subprocess:
+                callbacks.append(
+                    EarlyStopping(
+                        monitor=self.training_params["callbacks"].monitor_var,
+                        mode=self.training_params["callbacks"].monitor_var_mode,
+                        patience=self.training_params["callbacks"].patience,
+                    )
                 )
-            )
 
         return callbacks
 
@@ -217,6 +247,13 @@ class NERTraining(Task):
         dataloaders = self._init_torch_dataloaders(datasets, batch_collator)
         loggers = self._init_model_loggers()
         callbacks = self._init_model_callbacks()
+
+        # DEBUG START
+        dataset = HelloThereDataset()
+
+        # create dataloader
+        dataloader = DataLoader(dataset, batch_size=4, collate_fn=collate)
+        # DEBUG END
 
         if self.training_params.get("metrics", False):
             evaluator = Evaluator.from_config(entity_set=corpus.entity_set, **self.training_params["metrics"])
@@ -251,6 +288,11 @@ class NERTraining(Task):
             gpus = self.resource.device
             if isinstance(gpus, list) and len(gpus) > 1:
                 strategy = FSDPStrategy(cpu_offload=True)
+                # strategy = DeepSpeedStrategy(
+                #     stage=3,
+                #     offload_optimizer=True,
+                #     offload_parameters=True,
+                # )
             else:
                 strategy = "auto"
         else:
@@ -259,6 +301,7 @@ class NERTraining(Task):
             strategy = "auto"
 
         trainer = pl.Trainer(
+            num_sanity_val_steps=0,
             accelerator=accelerator,
             devices=gpus,
             logger=loggers,
@@ -293,6 +336,8 @@ class NERTraining(Task):
             tokeniser=tokeniser,
             logits_processor=logits_processor,
             is_multigpu=True if strategy != "auto" else False,
+            is_mainprocess=not self.is_subprocess,
+            entity_set=corpus.entity_set,
             # do_logging=self.is_subprocess,
         )
 
@@ -300,6 +345,8 @@ class NERTraining(Task):
             model=model,
             train_dataloaders=dataloaders["train"],
             val_dataloaders=dataloaders["validation"],
+            # train_dataloaders=dataloader,
+            # val_dataloaders=dataloader,
             ckpt_path="last" if self.warm_start else None,
         )
 

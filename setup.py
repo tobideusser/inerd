@@ -6,7 +6,7 @@ setup(
     author="Tobias Deusser",
     packages=find_packages(),
     install_requires=[
-        "torch",
+        "torch==2.0.0",
         "fluidml==0.3.1",
         "datasets",
         "tokenizers",
@@ -22,5 +22,7 @@ setup(
         "torchmetrics",
         "pandas",
         "fsspec",
+        "deepspeed",
+        "chardet",
     ],
 )
