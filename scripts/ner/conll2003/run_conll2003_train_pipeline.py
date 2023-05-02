@@ -8,7 +8,7 @@ from fluidml import Flow
 from fluidml.flow import TaskSpec
 
 from misusing_llms import project_path
-from misusing_llms.tasks import Parsing, Tokenisation, NERTraining, DS_NERTraining, HFNERTraining
+from misusing_llms.tasks import Parsing, Tokenisation, NERTraining
 from misusing_llms.utils.fluid_helper import (
     configure_logging,
     MyLocalFileStore,
@@ -93,19 +93,7 @@ def main():
     # get task configs
     data_parsing_cfg = config["Parsing"]
     tokenisation_cfg = config["Tokenisation"]
-    # preprocessing_cfg = config["Preprocessing"]
     training_cfg = config["Training"]
-    # training_additional_kwargs = {
-    #     "checkpointer_params": {
-    #         "serialization_dir": "models",
-    #         "num_serialized_models_to_keep": 1,
-    #     },
-    #     "train_logger_params": {
-    #         "type_": "tensorboard",
-    #         "log_dir": "logs",
-    #     },
-    #     "warm_start": warm_start,
-    # }
 
     # create all task specs
     parsing = TaskSpec(task=Parsing, config=data_parsing_cfg)

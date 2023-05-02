@@ -33,32 +33,6 @@ from misusing_llms.utils import set_seeds, set_device, is_debug
 logger = logging.getLogger(__name__)
 
 
-# create toy dataset
-class HelloThereDataset(Dataset):
-    def __init__(self, length=16):
-        self.prompt = "Hello There."
-        self.answer = "General Kenobi."
-        self.tokeniser = AutoTokenizer.from_pretrained("bigscience/bloom-1b7")
-        self.length = length
-
-    def __len__(self):
-        return self.length
-
-    def __getitem__(self, idx) -> Dict:
-        input_ids = self.tokeniser(self.prompt + " " + self.answer).input_ids
-        labels = [-100] * 3 + input_ids[3:]
-        prompt_ids = input_ids[:3]
-        return {"input_ids": input_ids, "labels": labels, "prompt_ids": prompt_ids}
-
-
-def collate(batch):
-    return {
-        "input_ids": torch.stack([torch.tensor(element["input_ids"]) for element in batch]),
-        "labels": torch.stack([torch.tensor(element["labels"]) for element in batch]),
-        "prompt_ids": torch.stack([torch.tensor(element["prompt_ids"]) for element in batch]),
-    }
-
-
 class NERTraining(Task):
     def __init__(
         self,
@@ -180,6 +154,8 @@ class NERTraining(Task):
                 "combine_train_valid": self.combine_train_valid,
                 "model_name": self.model_params["model_name"],
                 "n-bit precision": self.training_params["trainer"]["precision"],
+                "strategy": "fsdp" if len(self.resource.device) > 1 else "",
+                "num_gpus": len(self.resource.device),
             }
             for train_logger in loggers:
                 if isinstance(train_logger, pl.loggers.tensorboard.TensorBoardLogger):
