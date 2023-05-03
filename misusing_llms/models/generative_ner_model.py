@@ -54,6 +54,8 @@ class GenerativeNERModel(pl.LightningModule):
 
         self.ground_truth_entities: List[List[dict]] = []
         self.entity_strings_predicted: List[str] = []
+        self.best_valid_ner_micro_f1 = 0
+        self.best_epoch = 0
 
     def generate(self, batch) -> Dict:
         predictions = self.model.generate(
@@ -88,13 +90,9 @@ class GenerativeNERModel(pl.LightningModule):
         return batch
 
     def on_validation_batch_end(self, outputs, batch, batch_idx, dataloader_idx=0) -> None:
-        # if self.is_mainprocess:
-        # update metrics
-        # outputs = self.broadcast(outputs)
-        # outputs = self.all_gather(outputs)
+        # update stored results to eval on epoch end
         self.ground_truth_entities.extend(outputs["ground_truth_entities"])
         self.entity_strings_predicted.extend(outputs["entity_string_predicted"])
-        # self.evaluator.update(outputs)
 
     def on_validation_epoch_end(self) -> None:
 
@@ -110,36 +108,7 @@ class GenerativeNERModel(pl.LightningModule):
         labels = batch.get("labels", None)
         model_output = self.model(input_ids=batch["input_ids"], labels=labels)
 
-        logits = model_output.logits
-        predictions = torch.argmax(logits, dim=-1)
-
-        # batch["logits"] = logits  # logits not needed? just eats all the RAM?
-        batch["loss"] = model_output.loss
-        batch["predictions"] = predictions
-        batch["output_tokens"] = [self.tokeniser.convert_ids_to_tokens(p) for p in torch.unbind(predictions, dim=0)]
-
-        entity_string_token_ids_predicted = [
-            torch.masked_select(p, labels != -100) for p in torch.unbind(predictions, dim=0)
-        ]
-
-        batch["entity_string_predicted"] = self.tokeniser.batch_decode(entity_string_token_ids_predicted)
-
-        return batch
-
-    def on_train_batch_end(self, outputs, batch, batch_idx: int) -> None:
-        # logits = outputs["logits"]
-        # predictions = torch.argmax(logits, dim=-1)
-        # # copybatch = copy.deepcopy(batch)
-        # batch["predictions"] = predictions
-        # batch["output_tokens"] = [self.tokeniser.convert_ids_to_tokens(p) for p in torch.unbind(predictions, dim=0)]
-        # entity_string_token_ids_predicted = [
-        #     torch.masked_select(p, batch["labels"] != -100) for p in torch.unbind(predictions, dim=0)
-        # ]
-        # batch["entity_string_predicted"] = self.tokeniser.batch_decode(entity_string_token_ids_predicted)
-        # update metrics
-        # if self.is_mainprocess:
-        # self.evaluator.update(self._detach_tensors_in_dict(outputs))
-        loss = float(outputs["loss"])
+        loss = float(model_output.loss)
         self.log(
             "train-loss-step",
             loss,
@@ -148,6 +117,44 @@ class GenerativeNERModel(pl.LightningModule):
             sync_dist=self.is_multigpu,
         )
 
+        # logits = model_output.logits
+        # predictions = torch.argmax(logits, dim=-1)
+
+        # batch["logits"] = logits  # logits not needed? just eats all the RAM?
+        batch["loss"] = model_output.loss
+        # batch["predictions"] = predictions
+        # batch["output_tokens"] = [self.tokeniser.convert_ids_to_tokens(p) for p in torch.unbind(predictions, dim=0)]
+        #
+        # entity_string_token_ids_predicted = [
+        #     torch.masked_select(p, labels != -100) for p in torch.unbind(predictions, dim=0)
+        # ]
+        #
+        # batch["entity_string_predicted"] = self.tokeniser.batch_decode(entity_string_token_ids_predicted)
+
+        return batch
+
+    # def on_train_batch_end(self, outputs, batch, batch_idx: int) -> None:
+    #     # logits = outputs["logits"]
+    #     # predictions = torch.argmax(logits, dim=-1)
+    #     # # copybatch = copy.deepcopy(batch)
+    #     # batch["predictions"] = predictions
+    #     # batch["output_tokens"] = [self.tokeniser.convert_ids_to_tokens(p) for p in torch.unbind(predictions, dim=0)]
+    #     # entity_string_token_ids_predicted = [
+    #     #     torch.masked_select(p, batch["labels"] != -100) for p in torch.unbind(predictions, dim=0)
+    #     # ]
+    #     # batch["entity_string_predicted"] = self.tokeniser.batch_decode(entity_string_token_ids_predicted)
+    #     # update metrics
+    #     # if self.is_mainprocess:
+    #     # self.evaluator.update(self._detach_tensors_in_dict(outputs))
+    #     loss = float(outputs["loss"])
+    #     self.log(
+    #         "train-loss-step",
+    #         loss,
+    #         batch_size=self.trainer.train_dataloader.batch_size,
+    #         # rank_zero_only=True,
+    #         sync_dist=self.is_multigpu,
+    #     )
+
     # def on_train_epoch_end(self) -> None:
     #     # if self.is_mainprocess:
     #     # compute and log metrics
@@ -155,12 +162,22 @@ class GenerativeNERModel(pl.LightningModule):
     #     self.log_metrics(split="train")
 
     def log_metrics(self, split: str):
-        # saved_obs = self.evaluator.saved_observations
-        # if saved_obs > 0:
-        a = len(self.entity_strings_predicted)
         metrics = self.compute_metrics(reset=True)
-        # metrics = self.all_gather(metrics)
-        logger.info(f"saved_obs: {a} | f1: {metrics['ner_micro_f1']}")
+        ner_micro_f1 = metrics["ner_micro_f1"]
+        logger.info(f"Saved results: {len(self.entity_strings_predicted)} | micro f1: {metrics['ner_micro_f1']}")
+        if ner_micro_f1 > self.best_valid_ner_micro_f1:
+            self.best_epoch = self.current_epoch
+            self.best_valid_ner_micro_f1 = ner_micro_f1
+            self.log(
+                name="best-" + split + "-ner_micro_f1",
+                value=ner_micro_f1,
+                sync_dist=self.is_multigpu,
+            )
+            self.log(
+                name="best-epoch",
+                value=self.best_epoch,
+                sync_dist=self.is_multigpu,
+            )
         for k, v in metrics.items():
             if isinstance(v, dict):
                 # self._log_summary_dict(name=split + "-" + k, summary_dict=v)
@@ -170,7 +187,6 @@ class GenerativeNERModel(pl.LightningModule):
                     name=split + "-" + k,
                     value=v,
                     sync_dist=self.is_multigpu,
-                    # rank_zero_only=True,
                 )
 
     def _log_summary_dict(self, name: str, summary_dict: Dict):

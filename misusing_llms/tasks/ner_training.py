@@ -11,7 +11,7 @@ from pytorch_lightning.callbacks import (
     ModelCheckpoint,
     LearningRateMonitor,
 )
-from pytorch_lightning.loggers import TensorBoardLogger, WandbLogger
+from pytorch_lightning.loggers import TensorBoardLogger, WandbLogger, CSVLogger
 from pytorch_lightning.strategies import FSDPStrategy, DeepSpeedStrategy
 from torch.utils.data import DataLoader, Dataset
 from transformers import AutoTokenizer, LogitsProcessorList
@@ -43,6 +43,7 @@ class NERTraining(Task):
         warm_start: bool = False,
         wandb_logging: bool = True,
         tensorboard_logging: bool = False,
+        csv_logging: bool = False,
     ):
         super().__init__()
 
@@ -56,6 +57,7 @@ class NERTraining(Task):
 
         self.wandb_logging = wandb_logging
         self.tensorboard_logging = tensorboard_logging
+        self.csv_logging = csv_logging
 
         self.is_subprocess = "LOCAL_RANK" in os.environ
 
@@ -128,6 +130,12 @@ class NERTraining(Task):
                 initialised_loggers.append(
                     TensorBoardLogger(save_dir=os.path.join(run_dir, "tensorboard"), name="", version="")
                 )
+
+            if self.csv_logging:
+                initialised_loggers.append((CSVLogger(save_dir=run_dir, name="lightning_csv_logs")))
+
+            if not (self.wandb_logging or self.tensorboard_logging or self.csv_logging):
+                raise ValueError("Select at least one logger to allow tracking of the best epoch and model.")
 
             return initialised_loggers
         else:
@@ -224,13 +232,6 @@ class NERTraining(Task):
         loggers = self._init_model_loggers()
         callbacks = self._init_model_callbacks()
 
-        # DEBUG START
-        dataset = HelloThereDataset()
-
-        # create dataloader
-        dataloader = DataLoader(dataset, batch_size=4, collate_fn=collate)
-        # DEBUG END
-
         if self.training_params.get("metrics", False):
             evaluator = Evaluator.from_config(entity_set=corpus.entity_set, **self.training_params["metrics"])
         else:
@@ -246,10 +247,16 @@ class NERTraining(Task):
             )
             entity_type_tokens = sorted(list(corpus.entity_set))
 
+            vocab_size = tokeniser.vocab_size
+            if "bloom" in tokeniser.name_or_path:
+                logger.debug("'Bloom' tokeniser chosen, adding 200 to vocab size for logits processor.")
+                logger.debug("See: https://huggingface.co/bigscience/bloom-560m/discussions/43")
+                vocab_size += 200
+
             logits_processor.append(
                 InformedNERDecoderLogitsProcessor(
                     entity_type_tokens=entity_type_tokens,
-                    vocab_size=tokeniser.vocab_size,
+                    vocab_size=vocab_size,
                     tokeniser=tokeniser,
                     combine_token=combine_token,
                     entity_separator_token=";",
