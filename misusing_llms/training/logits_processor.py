@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Tuple
 
 import torch
 from torch import LongTensor, FloatTensor, BoolTensor
@@ -43,14 +43,41 @@ class InformedNERDecoderLogitsProcessor(LogitsProcessor):
                     self.entity_type_token_ids_end.append([entity_type_token_id[-1]])
                     self.entity_type_token_ids_begin_and_mid.append(entity_type_token_id[:-1])
 
+        # flatten entity_type_token_ids_begin_and_mid so that we can easily check rule 2
+        self.entity_type_token_ids_begin_and_mid_flattened = []
+        self.entity_type_token_ids_begin_and_mid_lookup = []  # in which entity_type the result was found
+        self.masks_rule2 = dict()
+        for i, entity_type in enumerate(self.entity_type_token_ids_begin_and_mid):
+            for token_id in entity_type:
+                self.entity_type_token_ids_begin_and_mid_flattened.append(token_id)
+                # find to which entity type the token_id belongs
+                lookup_index = self._find_token_id_in_entity_type_list(token_id=token_id)
+                self.entity_type_token_ids_begin_and_mid_lookup.append(lookup_index)
+                # get token ids from that entity_type
+                entity_type_token_ids = self.entity_type_token_ids[lookup_index[0]][lookup_index[1]]
+                # from that list we can get what token id has to be predicted next -> the one that comes after our
+                # previous token
+                only_allowed_token = entity_type_token_ids[entity_type_token_ids.index(token_id) + 1]
+                # create mask and append
+                mask = torch.ones(self.vocab_size, dtype=torch.bool)
+                mask[only_allowed_token] = False
+                self.masks_rule2[lookup_index] = mask
+
         self.mask_rule1 = torch.ones(self.vocab_size, dtype=torch.bool)
         for token_ids in self.entity_type_token_ids:
             self.mask_rule1[token_ids[0][0]] = False
             self.mask_rule1[token_ids[1][0]] = False
+        self.mask_rule1[tokeniser.eos_token_id] = False
 
         self.mask_rule3 = torch.ones(self.vocab_size, dtype=torch.bool)
-        self.mask_rule3[self.entity_separator_token_ids[0][0]] = False
-        self.mask_rule3[self.entity_separator_token_ids[1][0]] = False
+        self.mask_rule3[self.type_content_separator_token_ids[0][0]] = False
+        self.mask_rule3[self.type_content_separator_token_ids[1][0]] = False
+
+    def _find_token_id_in_entity_type_list(self, token_id: int) -> Tuple[int, int]:
+        for i, entity_type in enumerate(self.entity_type_token_ids):
+            for ii, entity_type_token_id in enumerate(entity_type):
+                if token_id in entity_type_token_id:
+                    return i, ii
 
     def _tokenise_with_leading_space(self, text: str) -> List[List[int]]:
         """tokenises the str input, once without a leading space and once with leading space"""
@@ -62,21 +89,39 @@ class InformedNERDecoderLogitsProcessor(LogitsProcessor):
             return [without_leading_space, with_leading_space]
 
     def __call__(self, input_ids: LongTensor, scores: FloatTensor):
-        # Enforced rules for NER generation:
-        #   1.  After the "combine_token" or the entity separator (";") the first token of an entity type has to be
-        #       predicted.
-        #   2.  After predicting the first token of any entity type token, the entity type must be completed before any
-        #       other tokens are predicted.
-        #   3.  After predicting the last token of an entity type, the type-content separator (":") has to be predicted.
-        #   4.  During the entity content prediction phase, i.e. after ":" and before ";" has been predicted, only
-        #       token_ids present in the input_ids and the entity separator (";") are allowed for prediction. This rule
-        #       is divided into to "sub-rules":
-        #           4a. After the type-content separator (":") any token from the input may be predicted.
-        #           4b. After a token from the input has been predicted, the only allowed tokens for prediction are
-        #               either the entity separator (";") or the token following the previous token in the input.
+        """
+        Enforced rules for NER generation:
+          1.  After the "combine_token" or the entity separator (";") the first token of an entity type or the end of
+              sequence (EOS) token has to be predicted.
+          2.  After predicting the first token of any entity type token, the entity type must be completed before any
+              other tokens are predicted.
+          3.  After predicting the last token of an entity type, the type-content separator (":") has to be predicted.
+          4.  During the entity content prediction phase, i.e. after ":" and before ";" has been predicted, only
+              token_ids present in the input_ids and the entity separator (";") are allowed for prediction. This rule
+              is divided into to "sub-rules":
+              4a.   After the type-content separator (":") any token from the input may be predicted.
+              4b.   After a token from the input has been predicted, the only allowed tokens for prediction are
+                    either the entity separator (";") or the token following the previous token in the input.
+        """
+        # dimension of tensor inputs
+        # input_ids: (batch_size x padded sequence length)
+        # scores: (batch_size x vocab size)
 
         # save the previous token for easier access
         previous_token_ids = input_ids[:, -1]
+
+        # create a list of lists containing each token id present in the prompt / input. This is required for rule 4.
+        prompt_ids = input_ids.tolist()
+        for i, input_ids_for_each_object in enumerate(prompt_ids):
+            try:
+                position_in_input_ids = input_ids_for_each_object.index(self.combine_token_ids[1][0])
+            except KeyError:
+                position_in_input_ids = input_ids_for_each_object.index(self.combine_token_ids[0][0])
+            prompt_ids[i] = [
+                prompt_id
+                for prompt_id in prompt_ids[i][:position_in_input_ids]
+                if prompt_id != self.tokeniser.pad_token_id
+            ]
 
         # save the device the scores are on (again for easier access)
         device = scores.device
@@ -85,14 +130,21 @@ class InformedNERDecoderLogitsProcessor(LogitsProcessor):
         for i, previous_token_id in enumerate(previous_token_ids.tolist()):
             if [previous_token_id] in self.combine_token_ids + self.entity_separator_token_ids:
                 # case 1:
-                #   After the "combine_token" or the entity separator (";") the first token of an entity type has to be
-                #   predicted.
+                #   After the "combine_token" or the entity separator (";") the first token of an entity type or the
+                #   end of sequence (EOS) token has to be predicted.
                 scores[i].masked_fill_(mask=self.mask_rule1.to(device), value=self.mask_value)
-            elif [previous_token_id] in self.entity_type_token_ids_begin_and_mid:
+            elif previous_token_id in self.entity_type_token_ids_begin_and_mid_flattened:
                 # case 2:
                 #   After predicting the first token of any entity type token, the entity type must be completed before
                 #   any other tokens are predicted.
-                pass
+
+                # get tuple from entity type lookup, this tells us which entity type the token belongs to
+                entity_type_position = self.entity_type_token_ids_begin_and_mid_lookup[
+                    self.entity_type_token_ids_begin_and_mid_flattened.index(previous_token_id)
+                ]
+
+                # apply the mask
+                scores[i].masked_fill_(mask=self.masks_rule2[entity_type_position].to(device), value=self.mask_value)
             elif [previous_token_id] in self.entity_type_token_ids_end:
                 # case 3:
                 #   After predicting the last token of an entity type, the type-content separator (":") has to be
@@ -101,5 +153,17 @@ class InformedNERDecoderLogitsProcessor(LogitsProcessor):
             elif [previous_token_id] in self.type_content_separator_token_ids:
                 # case 4a:
                 #   After the type-content separator (":") any token from the input may be predicted.
+
+                # create the mask (specific for each input)
+                mask_rule4a = torch.ones(self.vocab_size, dtype=torch.bool, device=device)
+                mask_rule4a[prompt_ids[i]] = False
+
+                # apply the mask
+                scores[i].masked_fill_(mask=mask_rule4a, value=self.mask_value)
+            elif previous_token_id in prompt_ids[i]:
+                # case 4b:
+                #   After a token from the input has been predicted, the only allowed tokens for prediction are either
+                #   the entity separator (";") or the token following the previous token in the input.
                 pass
-        pass
+
+        return scores

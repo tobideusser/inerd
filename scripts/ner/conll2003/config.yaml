@@ -13,7 +13,7 @@ Parsing:
   dataset: "CoNLL-2003"
   path_to_data_folders: null
   dataset_name: "CoNLL-2003"
-  debug_size: 12
+  debug_size: 500
   type_mapping:
     PER: "Person"
     LOC: "Location"
@@ -38,11 +38,11 @@ Parsing:
 # "bigscience/bloom-1b7"
 # "facebook/opt-2.7b"
 
-# models not fitting on four 32gb GPUs with fsdp and cpu offl oading:
+# models not fitting on four 32gb GPUs with fsdp and cpu offloading:
 # "bigscience/bloom-3b"
 
 Tokenisation:
-  tokeniser_name: &modelname "bigscience/bloom-1b1"
+  tokeniser_name: &modelname "bigscience/bloom-560m"
   special_tokens: null
   combine_token: "\n"
 
