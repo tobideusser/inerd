@@ -1,3 +1,4 @@
+from copy import deepcopy
 from typing import List, Tuple
 
 import torch
@@ -72,6 +73,11 @@ class InformedNERDecoderLogitsProcessor(LogitsProcessor):
         self.mask_rule3 = torch.ones(self.vocab_size, dtype=torch.bool)
         self.mask_rule3[self.type_content_separator_token_ids[0][0]] = False
         self.mask_rule3[self.type_content_separator_token_ids[1][0]] = False
+
+        # this mask is incomplete, as it also requires the previous token id
+        self.mask_rule4b_incomplete = torch.ones(self.vocab_size, dtype=torch.bool)
+        self.mask_rule4b_incomplete[self.entity_separator_token_ids[0][0]] = False
+        self.mask_rule4b_incomplete[self.entity_separator_token_ids[1][0]] = False
 
     def _find_token_id_in_entity_type_list(self, token_id: int) -> Tuple[int, int]:
         for i, entity_type in enumerate(self.entity_type_token_ids):
@@ -164,6 +170,21 @@ class InformedNERDecoderLogitsProcessor(LogitsProcessor):
                 # case 4b:
                 #   After a token from the input has been predicted, the only allowed tokens for prediction are either
                 #   the entity separator (";") or the token following the previous token in the input.
-                pass
+
+                try:
+                    next_token_id = prompt_ids[i][prompt_ids[i].index(previous_token_id) + 1]
+
+                    # deepcopy "incomplete" mask for rule 4b
+                    mask_rule4b = deepcopy(self.mask_rule4b_incomplete)
+
+                    # "complete" the mask by adding the next token id
+                    mask_rule4b[next_token_id] = False
+
+                    # apply the mask
+                    scores[i].masked_fill_(mask=mask_rule4b.to(device), value=self.mask_value)
+                except IndexError:
+                    # IndexError -> we are the end of the prompt, thus, the only allowed token ids are from the entity
+                    # separator
+                    scores[i].masked_fill_(mask=self.mask_rule4b_incomplete.to(device), value=self.mask_value)
 
         return scores
