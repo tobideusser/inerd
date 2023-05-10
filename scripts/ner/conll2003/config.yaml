@@ -2,7 +2,8 @@
 #base_dir: "/cluster/data/experiments/misusing_llms/conll2003_v1"
 #base_dir: "/scratch/data/misusing_llms/conll2003_dev"
 #base_dir: "/cluster/data/experiments/misusing_llms/conll2003_fsdp"
-base_dir: "/cluster/data/experiments/misusing_llms/conll2003_debug"
+#base_dir: "/cluster/data/experiments/misusing_llms/conll2003_debug"
+base_dir: "/cluster/data/experiments/misusing_llms/conll2003_singlegpu"
 seed: &seed 3141
 
 ###########
@@ -13,7 +14,7 @@ Parsing:
   dataset: "CoNLL-2003"
   path_to_data_folders: null
   dataset_name: "CoNLL-2003"
-  debug_size: 500
+  debug_size: null
   type_mapping:
     PER: "Person"
     LOC: "Location"
@@ -51,25 +52,11 @@ Tokenisation:
 # Model Training #
 ##################
 
-## HF Trainer
-#Training:
-#  model_name: *modelname
-#  combine_train_valid: false
-#  validate_on_test_set: false
-#  huggingface_trainer_params:
-#    # see https://huggingface.co/docs/transformers/v4.28.1/en/main_classes/trainer#transformers.TrainingArguments
-#    per_device_train_batch_size: 8
-#    per_device_eval_batch_size: 8
-#    num_train_epochs: 2
-#    gradient_accumulation_steps: 1
-#    learning_rate: 1.e-5
-#    weight_decay: 0
-
 Training:
 
   - seed: *seed
 
-    wandb_logging: false
+    wandb_logging: true
     tensorboard_logging: false
     csv_logging: true
 

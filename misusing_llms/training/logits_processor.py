@@ -1,9 +1,13 @@
+import logging
 from copy import deepcopy
 from typing import List, Tuple
 
 import torch
 from torch import LongTensor, FloatTensor, BoolTensor
 from transformers import LogitsProcessor, PreTrainedTokenizer
+
+
+logger = logging.getLogger(__name__)
 
 
 class InformedNERDecoderLogitsProcessor(LogitsProcessor):
@@ -25,8 +29,16 @@ class InformedNERDecoderLogitsProcessor(LogitsProcessor):
         self.vocab_size = vocab_size
         self.mask_value = mask_value
 
-        self.entity_separator_token_ids = self._tokenise_with_leading_space(text=self.entity_separator_token)
+        # apparently, the string ". \n" gets tokenised as a *single* token. This behaviour has been observed from the
+        # following tokenisers:
+        #   - bigscience/bloom
+        # Therefore, we add the token id for this to self.combine_token_ids
         self.combine_token_ids = self._tokenise_with_leading_space(text=self.combine_token)
+        if "bigscience/bloom" in self.tokeniser.name_or_path:
+            self.combine_token_ids.append(self.tokeniser(text=". " + self.combine_token).input_ids)
+
+        self.entity_separator_token_ids = self._tokenise_with_leading_space(text=self.entity_separator_token)
+
         self.type_content_separator_token_ids = self._tokenise_with_leading_space(
             text=self.type_content_separator_token
         )
@@ -121,8 +133,19 @@ class InformedNERDecoderLogitsProcessor(LogitsProcessor):
         for i, input_ids_for_each_object in enumerate(prompt_ids):
             try:
                 position_in_input_ids = input_ids_for_each_object.index(self.combine_token_ids[1][0])
-            except KeyError:
-                position_in_input_ids = input_ids_for_each_object.index(self.combine_token_ids[0][0])
+            except ValueError:
+                try:
+                    position_in_input_ids = input_ids_for_each_object.index(self.combine_token_ids[0][0])
+                except ValueError:
+                    try:
+                        position_in_input_ids = input_ids_for_each_object.index(self.combine_token_ids[2][0])
+                    except ValueError:
+                        logger.error(
+                            f"No combine token id found in the input!\n"
+                            f"Sentence:\n{self.tokeniser.decode(prompt_ids[i])}"
+                            f"Token ids:\n{prompt_ids[i]}"
+                        )
+                        raise ValueError
             prompt_ids[i] = [
                 prompt_id
                 for prompt_id in prompt_ids[i][:position_in_input_ids]
