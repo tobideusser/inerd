@@ -30,7 +30,7 @@ class Tokenisation(Task):
 
         self.train_mode = train_mode
 
-        self.tokeniser = AutoTokenizer.from_pretrained(self.tokeniser_name, use_fast=False)
+        self.tokeniser = AutoTokenizer.from_pretrained(self.tokeniser_name)
 
     def _tokenise_corpus(self, corpus: NERCorpus) -> NERCorpus:
 

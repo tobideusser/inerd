@@ -24,5 +24,7 @@ setup(
         "fsspec",
         "deepspeed",
         "chardet",
+        "bitsandbytes",
+        "accelerate",
     ],
 )

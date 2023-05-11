@@ -4,9 +4,12 @@ from typing import Union
 import deepspeed
 import torch
 
+
 OPTIMISERS = {
     "adam": "torch.optim.Adam",
+    "adam8bit": "bitsandbytes.optim.Adam8bit",
     "adamW": "torch.optim.AdamW",  # torch.optim.AdamW | transformers.AdamW
+    "adamW8bit": "bitsandbytes.optim.AdamW8bit",
     "adagrad": "torch.optim.Adagrad",
     "FusedAdam": "deepspeed.ops.adam.FusedAdam",
     "DeepSpeedCPUAdam": "deepspeed.ops.adam.DeepSpeedCPUAdam",
@@ -16,8 +19,12 @@ OPTIMISERS = {
 class Optimiser:
     @classmethod
     def from_config(
-        cls, type_: str, multigpu: bool = False, *args, **kwargs
+        cls, type_: str, multigpu: bool = False, load_in_8bit: bool = False, *args, **kwargs
     ) -> Union[torch.optim.Optimizer, deepspeed.ops.adam.FusedAdam, deepspeed.ops.adam.DeepSpeedCPUAdam]:
+
+        if load_in_8bit:
+            type_ = type_ + "8bit"
+
         multigpu = False  # DEBUG!
         if multigpu:
             model_params = kwargs.pop("params")

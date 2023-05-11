@@ -37,8 +37,12 @@ class GenerativeNERModel(pl.LightningModule):
         super().__init__()
         model_name = model_params["model_name"]
         self.entity_set = entity_set
+        self.load_in_8bit: bool = model_params["load_in_8bit"]
 
-        self.model = AutoModelForCausalLM.from_pretrained(model_name)
+        if self.load_in_8bit:
+            self.model = AutoModelForCausalLM.from_pretrained(model_name, load_in_8bit=True, device_map="auto")
+        else:
+            self.model = AutoModelForCausalLM.from_pretrained(model_name)
         self.tokeniser = tokeniser
         self.logits_processor = logits_processor
 

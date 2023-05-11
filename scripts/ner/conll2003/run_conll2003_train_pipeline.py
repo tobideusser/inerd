@@ -41,6 +41,7 @@ def parse_args() -> argparse.Namespace:
         help="How to group multiple GPU's, e.g. `--cuda-group 2` groups in pair of twos",
     )
     parser.add_argument("--use-cuda", action="store_true", help="Use cuda.")
+    parser.add_argument("--max-split-size", type=int, default=None, help="Max. split size for cuda processes.")
     parser.add_argument("--warm-start", action="store_true", help="Tries to warm start training.")
     parser.add_argument("--num-workers", type=int, default=1, help="Number of multiprocessing workers.")
     parser.add_argument(
@@ -65,7 +66,6 @@ def parse_args() -> argparse.Namespace:
 
 
 def main():
-    # os.environ["CUDA_VISIBLE_DEVICES"] = "5,6"
     args = parse_args()
 
     config = yaml.safe_load(open(args.config, "r"))
@@ -85,6 +85,9 @@ def main():
     # fixes pytorch memory leak
     os.environ["CUDA_VISIBLE_DEVICES"] = ",".join([str(cuda_id) for cuda_id in cuda_ids])
     cuda_ids = list(range(len(cuda_ids)))
+
+    if args.max_split_size:
+        os.environ["PYTORCH_CUDA_ALLOC_CONF"] = f"max_split_size_mb:{args.max_split_size}"
 
     log_dir = os.path.join(base_dir, "logging")
     os.makedirs(log_dir, exist_ok=True)

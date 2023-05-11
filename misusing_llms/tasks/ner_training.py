@@ -15,6 +15,8 @@ from pytorch_lightning.loggers import TensorBoardLogger, WandbLogger, CSVLogger
 from pytorch_lightning.strategies import FSDPStrategy, DeepSpeedStrategy
 from torch.utils.data import DataLoader, Dataset
 from transformers import AutoTokenizer, LogitsProcessorList
+from transformers.models.bloom.modeling_bloom import BloomBlock
+from transformers.models.opt.modeling_opt import OPTDecoderLayer
 
 from misusing_llms.data_classes import NERCorpus
 from misusing_llms.models import GenerativeNERModel
@@ -164,6 +166,7 @@ class NERTraining(Task):
                 "n-bit precision": self.training_params["trainer"]["precision"],
                 "strategy": "fsdp" if len(self.resource.device) > 1 else "",
                 "num_gpus": len(self.resource.device),
+                "model_8bit": self.model_params["load_in_8bit"],
             }
             for train_logger in loggers:
                 if isinstance(train_logger, pl.loggers.tensorboard.TensorBoardLogger):
@@ -218,13 +221,18 @@ class NERTraining(Task):
 
         set_seeds(self.seed)
 
-        # this disables the warning that appears when using bloom (and others?)
+        # this disables the warning that appears when using bloom, opt, and RedPajama (and others?)
         # see here:
         #   https://stackoverflow.com/questions/62691279/how-to-disable-tokenizers-parallelism-true-false-warning
-        if "bloom" in self.model_params["model_name"]:
+        if (
+            "bloom" in self.model_params["model_name"]
+            or "RedPajama" in self.model_params["model_name"]
+            or "opt" in self.model_params["model_name"]
+            or "gpt-2" in self.model_params["model_name"]
+        ):
             os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
-        tokeniser = AutoTokenizer.from_pretrained(self.model_params["model_name"], use_fast=False)
+        tokeniser = AutoTokenizer.from_pretrained(self.model_params["model_name"])
 
         batch_collator = NERBatchCollator(pad_token_id=tokeniser.pad_token_id)
         datasets = self._init_torch_datasets(corpus=corpus)
@@ -270,7 +278,12 @@ class NERTraining(Task):
             accelerator = "gpu"
             gpus = self.resource.device
             if isinstance(gpus, list) and len(gpus) > 1:
-                strategy = FSDPStrategy(cpu_offload=True)
+                if "bloom" in self.model_params["model_name"]:
+                    strategy = FSDPStrategy(cpu_offload=True, activation_checkpointing=BloomBlock)
+                elif "opt" in self.model_params["model_name"]:
+                    strategy = FSDPStrategy(cpu_offload=True, activation_checkpointing=OPTDecoderLayer)
+                else:
+                    strategy = FSDPStrategy(cpu_offload=True)
                 # strategy = DeepSpeedStrategy(
                 #     stage=3,
                 #     offload_optimizer=True,

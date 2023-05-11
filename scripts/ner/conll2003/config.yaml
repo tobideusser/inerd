@@ -1,9 +1,9 @@
 # Base directory to store all task outputs
 #base_dir: "/cluster/data/experiments/misusing_llms/conll2003_v1"
 #base_dir: "/scratch/data/misusing_llms/conll2003_dev"
-#base_dir: "/cluster/data/experiments/misusing_llms/conll2003_fsdp"
+base_dir: "/cluster/data/experiments/misusing_llms/conll2003_fsdp"
 #base_dir: "/cluster/data/experiments/misusing_llms/conll2003_debug"
-base_dir: "/cluster/data/experiments/misusing_llms/conll2003_singlegpu"
+#base_dir: "/cluster/data/experiments/misusing_llms/conll2003_singlegpu"
 seed: &seed 3141
 
 ###########
@@ -37,13 +37,14 @@ Parsing:
 
 # models fitting on two 32gb GPUs with fsdp and cpu offloading:
 # "bigscience/bloom-1b7"
-# "facebook/opt-2.7b"
 
 # models not fitting on four 32gb GPUs with fsdp and cpu offloading:
 # "bigscience/bloom-3b"
+# "togethercomputer/RedPajama-INCITE-Base-3B-v1"
+# "facebook/opt-2.7b"
 
 Tokenisation:
-  tokeniser_name: &modelname "bigscience/bloom-560m"
+  tokeniser_name: &modelname "gpt2-xl"
   special_tokens: null
   combine_token: "\n"
 
@@ -62,6 +63,7 @@ Training:
 
     model_params:
       model_name: *modelname
+      load_in_8bit: False
 
     informed_generation: true
 
@@ -77,7 +79,7 @@ Training:
 #        lr_warmup: 0.1
 
       trainer:
-        max_epochs: 10
+        max_epochs: 5
         accumulate_grad_batches: 1 # [2, 4]  # 4
         gradient_clip_val: 1  # [1, 10]  # 10
         precision: 32
