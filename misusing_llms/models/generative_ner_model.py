@@ -7,6 +7,7 @@ import pandas as pd
 import numpy as np
 import pytorch_lightning as pl
 import torch
+from peft import get_peft_model, LoraConfig, TaskType
 from transformers import AutoModelForCausalLM, PreTrainedTokenizerFast
 from deepspeed.ops.adam import DeepSpeedCPUAdam
 from pytorch_lightning.utilities import rank_zero_only
@@ -38,11 +39,20 @@ class GenerativeNERModel(pl.LightningModule):
         model_name = model_params["model_name"]
         self.entity_set = entity_set
         self.load_in_8bit: bool = model_params["load_in_8bit"]
+        self.lora: bool = model_params["lora"]
 
         if self.load_in_8bit:
             self.model = AutoModelForCausalLM.from_pretrained(model_name, load_in_8bit=True, device_map="auto")
         else:
             self.model = AutoModelForCausalLM.from_pretrained(model_name)
+
+        if self.lora:
+            self.lora_config = model_params["lora_config"]
+            peft_config = LoraConfig(task_type=TaskType.CAUSAL_LM, **self.lora_config)
+            self.model = get_peft_model(model=self.model, peft_config=peft_config)
+        else:
+            self.lora_config = None
+
         self.tokeniser = tokeniser
         self.logits_processor = logits_processor
 
@@ -56,6 +66,7 @@ class GenerativeNERModel(pl.LightningModule):
         self.is_multigpu = is_multigpu
         self.is_mainprocess = is_mainprocess
 
+        # logging stuff
         self.ground_truth_entities: List[List[dict]] = []
         self.entity_strings_predicted: List[str] = []
         self.best_valid_ner_micro_f1 = 0

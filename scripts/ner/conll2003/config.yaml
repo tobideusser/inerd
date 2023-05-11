@@ -64,6 +64,13 @@ Training:
     model_params:
       model_name: *modelname
       load_in_8bit: False
+      lora: true
+      lora_config:
+        r: 8
+        lora_alpha: 32
+        lora_dropout: 0.1
+        fan_in_fan_out: false
+
 
     informed_generation: true
 

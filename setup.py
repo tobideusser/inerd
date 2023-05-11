@@ -26,5 +26,6 @@ setup(
         "chardet",
         "bitsandbytes",
         "accelerate",
+        "peft",
     ],
 )
