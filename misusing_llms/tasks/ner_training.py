@@ -293,7 +293,7 @@ class NERTraining(Task):
                 strategy = "auto"
         else:
             accelerator = "cpu"
-            gpus = None
+            gpus = "auto"
             strategy = "auto"
 
         trainer = pl.Trainer(

@@ -83,8 +83,9 @@ def main():
     run_name = "debug" if is_debug() else args.run_name
 
     # fixes pytorch memory leak
-    os.environ["CUDA_VISIBLE_DEVICES"] = ",".join([str(cuda_id) for cuda_id in cuda_ids])
-    cuda_ids = list(range(len(cuda_ids)))
+    if use_cuda:
+        os.environ["CUDA_VISIBLE_DEVICES"] = ",".join([str(cuda_id) for cuda_id in cuda_ids])
+        cuda_ids = list(range(len(cuda_ids)))
 
     if args.max_split_size:
         os.environ["PYTORCH_CUDA_ALLOC_CONF"] = f"max_split_size_mb:{args.max_split_size}"
@@ -124,7 +125,7 @@ def main():
 
     # create list of resources
     devices = get_balanced_devices(count=num_workers, use_cuda=use_cuda, cuda_ids=cuda_ids, cuda_group=cuda_group)
-    if isinstance(devices, str) and devices == "cpu":
+    if devices == ["cpu"]:
         resources = [TaskResource(cuda=False, device="cpu") for _ in range(num_workers)]
     else:
         resources = [TaskResource(cuda=True, device=devices[i]) for i in range(num_workers)]

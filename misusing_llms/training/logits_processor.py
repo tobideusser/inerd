@@ -116,7 +116,7 @@ class InformedNERDecoderLogitsProcessor(LogitsProcessor):
           3.  After predicting the last token of an entity type, the type-content separator (":") has to be predicted.
           4.  During the entity content prediction phase, i.e. after ":" and before ";" has been predicted, only
               token_ids present in the input_ids and the entity separator (";") are allowed for prediction. This rule
-              is divided into to "sub-rules":
+              is divided into two "sub-rules":
               4a.   After the type-content separator (":") any token from the input may be predicted.
               4b.   After a token from the input has been predicted, the only allowed tokens for prediction are
                     either the entity separator (";") or the token following the previous token in the input.
