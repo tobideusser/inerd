@@ -8,6 +8,7 @@ import numpy as np
 import pytorch_lightning as pl
 import torch
 from peft import get_peft_model, LoraConfig, TaskType
+from torch.distributed.fsdp.wrap import wrap
 from transformers import AutoModelForCausalLM, PreTrainedTokenizerFast
 from deepspeed.ops.adam import DeepSpeedCPUAdam
 from pytorch_lightning.utilities import rank_zero_only
@@ -36,15 +37,15 @@ class GenerativeNERModel(pl.LightningModule):
         entity_set: Optional[Set[str]] = None,
     ):
         super().__init__()
-        model_name = model_params["model_name"]
+        self.model_name = model_params["model_name"]
         self.entity_set = entity_set
         self.load_in_8bit: bool = model_params["load_in_8bit"]
         self.lora: bool = model_params["lora"]
 
         if self.load_in_8bit:
-            self.model = AutoModelForCausalLM.from_pretrained(model_name, load_in_8bit=True, device_map="auto")
+            self.model = AutoModelForCausalLM.from_pretrained(self.model_name, load_in_8bit=True, device_map="auto")
         else:
-            self.model = AutoModelForCausalLM.from_pretrained(model_name)
+            self.model = AutoModelForCausalLM.from_pretrained(self.model_name)
 
         if self.lora:
             self.lora_config = model_params["lora_config"]
@@ -71,6 +72,19 @@ class GenerativeNERModel(pl.LightningModule):
         self.entity_strings_predicted: List[str] = []
         self.best_valid_ner_micro_f1 = 0
         self.best_epoch = 0
+
+    def configure_sharded_model(self) -> None:
+        if self.model.base_model_prefix == "gpt_neox":  # redpajama model
+            self.model.gpt_neox.embed_in = wrap(self.model.gpt_neox.embed_in)
+            for i, layer in enumerate(self.model.gpt_neox.layers):
+                self.model.gpt_neox.layers[i] = wrap(layer)
+            self.model.gpt_neox.final_layer_norm = wrap(self.model.gpt_neox.final_layer_norm)
+            self.model.embed_out = wrap(self.model.embed_out)
+        else:
+            raise NotImplementedError(
+                f"manual wrapping for model_name: {self.model_name} and base_model_prefix: "
+                f"{self.model.base_model_prefix} not implemented."
+            )
 
     def generate(self, batch) -> Dict:
         predictions = self.model.generate(

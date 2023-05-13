@@ -1,8 +1,8 @@
 # Base directory to store all task outputs
 #base_dir: "/cluster/data/experiments/misusing_llms/conll2003_v1"
 #base_dir: "/scratch/data/misusing_llms/conll2003_dev"
-#base_dir: "/cluster/data/experiments/misusing_llms/conll2003_fsdp"
-base_dir: "/cluster/data/experiments/misusing_llms/conll2003_debug"
+base_dir: "/cluster/data/experiments/misusing_llms/conll2003_fsdp"
+#base_dir: "/cluster/data/experiments/misusing_llms/conll2003_debug"
 #base_dir: "/cluster/data/experiments/misusing_llms/conll2003_singlegpu"
 seed: &seed 3141
 
@@ -36,6 +36,9 @@ Parsing:
 # "bigscience/bloom-560m"
 # "facebook/opt-125m"
 
+# models fitting on one 32gb GPU with LORA:
+
+
 # models fitting on two 32gb GPUs with fsdp and cpu offloading:
 # "bigscience/bloom-1b7"
 # "gpt2-xl"
@@ -45,8 +48,11 @@ Parsing:
 # "togethercomputer/RedPajama-INCITE-Base-3B-v1"
 # "facebook/opt-2.7b"
 
+# models fitting on four 32gb GPUs with fsdp, cpu offloading, and manual wrapping:
+# "togethercomputer/RedPajama-INCITE-Base-3B-v1"
+
 Tokenisation:
-  tokeniser_name: &modelname "facebook/opt-125m"
+  tokeniser_name: &modelname "togethercomputer/RedPajama-INCITE-Base-7B-v0.1"
   special_tokens: null
   combine_token: "\n"
 
@@ -66,7 +72,7 @@ Training:
     model_params:
       model_name: *modelname
       load_in_8bit: False
-      lora: true
+      lora: false
       lora_config:
         r: 8
         lora_alpha: 32
@@ -110,7 +116,7 @@ Training:
 #          weights: null
 
       data_loading:
-        batch_size: 2
+        batch_size: 1
 #        drop_last: false
         combine_train_valid: false
         validate_on_test_set: false
