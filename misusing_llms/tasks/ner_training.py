@@ -43,9 +43,8 @@ class NERTraining(Task):
         generation_params: Dict,
         seed: int = 3141,
         warm_start: bool = False,
-        wandb_logging: bool = True,
-        tensorboard_logging: bool = False,
-        csv_logging: bool = False,
+        wandb_logging: bool = False,
+        csv_logging: bool = True,
     ):
         super().__init__()
 
@@ -59,7 +58,6 @@ class NERTraining(Task):
         self.combine_train_valid = self.training_params["data_loading"].pop("combine_train_valid", False)
 
         self.wandb_logging = wandb_logging
-        self.tensorboard_logging = tensorboard_logging
         self.csv_logging = csv_logging
 
         self.is_subprocess = "LOCAL_RANK" in os.environ
@@ -129,15 +127,10 @@ class NERTraining(Task):
                 initialised_loggers.append(WandbLogger(project=self.info.project_name, name=run_id, save_dir=run_dir))
                 self._save_wandb_api_path()
 
-            if self.tensorboard_logging:
-                initialised_loggers.append(
-                    TensorBoardLogger(save_dir=os.path.join(run_dir, "tensorboard"), name="", version="")
-                )
-
             if self.csv_logging:
                 initialised_loggers.append((CSVLogger(save_dir=run_dir, name="lightning_csv_logs")))
 
-            if not (self.wandb_logging or self.tensorboard_logging or self.csv_logging):
+            if not (self.wandb_logging or self.csv_logging):
                 raise ValueError("Select at least one logger to allow tracking of the best epoch and model.")
 
             return initialised_loggers
