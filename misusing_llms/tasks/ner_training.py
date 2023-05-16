@@ -40,7 +40,7 @@ class NERTraining(Task):
         self,
         training_params: Dict,
         model_params: Dict,
-        informed_generation: bool = False,
+        generation_params: Dict,
         seed: int = 3141,
         warm_start: bool = False,
         wandb_logging: bool = True,
@@ -51,7 +51,8 @@ class NERTraining(Task):
 
         self.training_params = training_params
         self.model_params = model_params
-        self.informed_generation = informed_generation
+        self.informed_generation = generation_params.pop("informed_generation")
+        self.generation_params = generation_params
         self.seed = seed
         self.warm_start = warm_start
 
@@ -167,6 +168,7 @@ class NERTraining(Task):
                 "strategy": "fsdp" if len(self.resource.device) > 1 else "",
                 "num_gpus": len(self.resource.device),
                 "model_8bit": self.model_params["load_in_8bit"],
+                "lora": self.model_params["lora"],
             }
             for train_logger in loggers:
                 if isinstance(train_logger, pl.loggers.tensorboard.TensorBoardLogger):
@@ -233,8 +235,15 @@ class NERTraining(Task):
             os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
         tokeniser = AutoTokenizer.from_pretrained(self.model_params["model_name"])
+        if "RedPajama" in self.model_params["model_name"]:
+            pad_token_id = 1  # "<|padding|>" in GPT-NEOX
+            tokeniser.pad_token_id = 1
+        elif tokeniser.pad_token_id is None:
+            raise NotImplementedError
+        else:
+            pad_token_id = tokeniser.pad_token_id
 
-        batch_collator = NERBatchCollator(pad_token_id=tokeniser.pad_token_id)
+        batch_collator = NERBatchCollator(pad_token_id=pad_token_id)
         datasets = self._init_torch_datasets(corpus=corpus)
         dataloaders = self._init_torch_dataloaders(datasets, batch_collator)
         loggers = self._init_model_loggers()
@@ -260,6 +269,9 @@ class NERTraining(Task):
                 logger.debug("'Bloom' tokeniser chosen, adding 200 to vocab size for logits processor.")
                 logger.debug("See: https://huggingface.co/bigscience/bloom-560m/discussions/43")
                 vocab_size += 200
+            elif "RedPajama" in tokeniser.name_or_path:
+                logger.debug("'RedPajama' tokeniser chosen, adding 178 to vocab size for logits processor.")
+                vocab_size += 178
 
             logits_processor.append(
                 InformedNERDecoderLogitsProcessor(
@@ -326,6 +338,7 @@ class NERTraining(Task):
         model = GenerativeNERModel(
             model_params=self.model_params,
             optimiser_params=self.training_params["optimiser"],
+            generation_params=self.generation_params,
             learning_rate_scheduler_inputs=learning_rate_scheduler_inputs,
             # evaluator_params=self.training_params["metrics"],
             evaluator=evaluator,
@@ -334,6 +347,7 @@ class NERTraining(Task):
             is_multigpu=True if strategy != "auto" else False,
             is_mainprocess=not self.is_subprocess,
             entity_set=corpus.entity_set,
+            pad_token_id=pad_token_id,
             # do_logging=self.is_subprocess,
         )
 

@@ -88,8 +88,10 @@ class Sentence:
                 s += entity.type_ + ": " + " ".join(entity.words) + "; "
             if len(s) > 0:
                 s = s[:-1]
-            elif s == "":
-                s = ";"  # no entities, model should just predict ;
+            # elif s == "":
+            #     s = ";"  # no entities, model should just predict ;
+
+            # if if s == "": model should predict EOS token
             self._entity_string = s
         return self._entity_string
 

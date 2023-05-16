@@ -83,9 +83,9 @@ def main():
     run_name = "debug" if is_debug() else args.run_name
 
     # fixes pytorch memory leak
-    if use_cuda:
-        os.environ["CUDA_VISIBLE_DEVICES"] = ",".join([str(cuda_id) for cuda_id in cuda_ids])
-        cuda_ids = list(range(len(cuda_ids)))
+    # if use_cuda:
+    #     os.environ["CUDA_VISIBLE_DEVICES"] = ",".join([str(cuda_id) for cuda_id in cuda_ids])
+    #     cuda_ids = list(range(len(cuda_ids)))
 
     if args.max_split_size:
         os.environ["PYTORCH_CUDA_ALLOC_CONF"] = f"max_split_size_mb:{args.max_split_size}"

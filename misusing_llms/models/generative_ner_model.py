@@ -27,6 +27,8 @@ class GenerativeNERModel(pl.LightningModule):
         self,
         model_params: Dict,
         tokeniser: PreTrainedTokenizerFast,
+        generation_params: Dict,
+        pad_token_id: Optional[int] = None,
         is_multigpu: bool = True,
         is_mainprocess: bool = True,
         logits_processor: Optional[LogitsProcessorList] = None,
@@ -55,8 +57,13 @@ class GenerativeNERModel(pl.LightningModule):
             self.lora_config = None
 
         self.tokeniser = tokeniser
+        if pad_token_id:
+            self.pad_token_id = pad_token_id
+        else:
+            self.pad_token_id = self.tokeniser.pad_token_id
         self.logits_processor = logits_processor
 
+        self.generation_params = generation_params
         self.optimiser_params = optimiser_params
         self.learning_rate_scheduler_inputs = learning_rate_scheduler_inputs
         if evaluator is not None:
@@ -70,6 +77,7 @@ class GenerativeNERModel(pl.LightningModule):
         # logging stuff
         self.ground_truth_entities: List[List[dict]] = []
         self.entity_strings_predicted: List[str] = []
+        self.entity_strings_ground_truth: List[str] = []
         self.best_valid_ner_micro_f1 = 0
         self.best_epoch = 0
 
@@ -86,30 +94,14 @@ class GenerativeNERModel(pl.LightningModule):
                 f"{self.model.base_model_prefix} not implemented."
             )
 
-    def generate(self, batch) -> Dict:
-        predictions = self.model.generate(
-            input_ids=batch["prompt_ids"],
-            num_beams=1,
-            do_sample=False,
-            # max_length=batch["max_length_prompt_ids"] + 100,
-            logits_processor=self.logits_processor,
-        )
-        batch["predictions"] = predictions
-        batch["output_tokens"] = [self.tokeniser.convert_ids_to_tokens(p) for p in torch.unbind(predictions, dim=0)]
-        # entity_string_token_ids_predicted = predictions[:, batch["max_length_prompt_ids"] :]
-        # batch["entity_string_predicted"] = self.tokeniser.batch_decode(entity_string_token_ids_predicted)
-        return batch
-
     def validation_step(self, batch: Dict, batch_idx: int) -> Dict:
         predictions = self.model.generate(
             input_ids=batch["prompt_ids"],
-            num_beams=1,
-            do_sample=False,
-            max_new_tokens=54,
-            # max_length=200,
-            # max_length=batch["max_length_prompt_ids"] + 100,
+            attention_mask=(batch["prompt_ids"] != self.pad_token_id).type(torch.LongTensor).to(self.device),
             logits_processor=self.logits_processor,
             synced_gpus=self.is_multigpu,
+            pad_token_id=self.tokeniser.eos_token_id,
+            **self.generation_params,
         )
         batch["predictions"] = predictions
         batch["output_tokens"] = [self.tokeniser.convert_ids_to_tokens(p) for p in torch.unbind(predictions, dim=0)]
@@ -119,9 +111,10 @@ class GenerativeNERModel(pl.LightningModule):
         return batch
 
     def on_validation_batch_end(self, outputs, batch, batch_idx, dataloader_idx=0) -> None:
-        # update stored results to eval on epoch end
+        # update stored results to evalaluate them at the end of the epoch
         self.ground_truth_entities.extend(outputs["ground_truth_entities"])
         self.entity_strings_predicted.extend(outputs["entity_string_predicted"])
+        self.entity_strings_ground_truth.extend(outputs["entity_string"])
 
     def on_validation_epoch_end(self) -> None:
 
@@ -145,53 +138,11 @@ class GenerativeNERModel(pl.LightningModule):
             # rank_zero_only=True,
             sync_dist=self.is_multigpu,
         )
-
-        # logits = model_output.logits
-        # predictions = torch.argmax(logits, dim=-1)
-
-        # batch["logits"] = logits  # logits not needed? just eats all the RAM?
         batch["loss"] = model_output.loss
-        # batch["predictions"] = predictions
-        # batch["output_tokens"] = [self.tokeniser.convert_ids_to_tokens(p) for p in torch.unbind(predictions, dim=0)]
-        #
-        # entity_string_token_ids_predicted = [
-        #     torch.masked_select(p, labels != -100) for p in torch.unbind(predictions, dim=0)
-        # ]
-        #
-        # batch["entity_string_predicted"] = self.tokeniser.batch_decode(entity_string_token_ids_predicted)
-
         return batch
 
-    # def on_train_batch_end(self, outputs, batch, batch_idx: int) -> None:
-    #     # logits = outputs["logits"]
-    #     # predictions = torch.argmax(logits, dim=-1)
-    #     # # copybatch = copy.deepcopy(batch)
-    #     # batch["predictions"] = predictions
-    #     # batch["output_tokens"] = [self.tokeniser.convert_ids_to_tokens(p) for p in torch.unbind(predictions, dim=0)]
-    #     # entity_string_token_ids_predicted = [
-    #     #     torch.masked_select(p, batch["labels"] != -100) for p in torch.unbind(predictions, dim=0)
-    #     # ]
-    #     # batch["entity_string_predicted"] = self.tokeniser.batch_decode(entity_string_token_ids_predicted)
-    #     # update metrics
-    #     # if self.is_mainprocess:
-    #     # self.evaluator.update(self._detach_tensors_in_dict(outputs))
-    #     loss = float(outputs["loss"])
-    #     self.log(
-    #         "train-loss-step",
-    #         loss,
-    #         batch_size=self.trainer.train_dataloader.batch_size,
-    #         # rank_zero_only=True,
-    #         sync_dist=self.is_multigpu,
-    #     )
-
-    # def on_train_epoch_end(self) -> None:
-    #     # if self.is_mainprocess:
-    #     # compute and log metrics
-    #     # metrics = self.evaluator.compute(reset=True)
-    #     self.log_metrics(split="train")
-
     def log_metrics(self, split: str):
-        metrics = self.compute_metrics(reset=True)
+        metrics = self.compute_metrics()
         ner_micro_f1 = metrics["ner_micro_f1"]
         logger.info(f"Saved results: {len(self.entity_strings_predicted)} | micro f1: {metrics['ner_micro_f1']}")
         if ner_micro_f1 > self.best_valid_ner_micro_f1:
@@ -207,6 +158,7 @@ class GenerativeNERModel(pl.LightningModule):
                 value=self.best_epoch,
                 sync_dist=self.is_multigpu,
             )
+            self._log_predictions()
         for k, v in metrics.items():
             if isinstance(v, dict):
                 # self._log_summary_dict(name=split + "-" + k, summary_dict=v)
@@ -217,18 +169,35 @@ class GenerativeNERModel(pl.LightningModule):
                     value=v,
                     sync_dist=self.is_multigpu,
                 )
+        self._reset_predictions()
 
-    def _log_summary_dict(self, name: str, summary_dict: Dict):
-        # use pandas to format as a human-readable table
-        table = pd.DataFrame.from_dict(summary_dict, orient="index")
-        table = table.reset_index(names="metric")
+    @rank_zero_only
+    def _log_predictions(self):
+        table = pd.DataFrame(
+            {
+                "ground_truth": self.entity_strings_ground_truth,
+                "predicted": self.entity_strings_predicted,
+            }
+        )
         for train_logger in self.loggers:
-            if isinstance(train_logger, pl.loggers.tensorboard.TensorBoardLogger):
-                train_logger.experiment.add_text(name, table.to_string(), global_step=self.current_epoch)
-            elif isinstance(train_logger, pl.loggers.wandb.WandbLogger):
-                train_logger.log_table(key=name, dataframe=table, step=self.global_step)
+            # if isinstance(train_logger, pl.loggers.tensorboard.TensorBoardLogger):
+            #     train_logger.experiment.add_text(name, table.to_string(), global_step=self.current_epoch)
+            if isinstance(train_logger, pl.loggers.wandb.WandbLogger):
+                train_logger.log_text(key="val_predictions", dataframe=table, step=self.global_step)
             else:
                 logger.warning(f"pl.Trainer.logger of type {type(train_logger)} can not store text.")
+
+    # def _log_summary_dict(self, name: str, summary_dict: Dict):
+    #     # use pandas to format as a human-readable table
+    #     table = pd.DataFrame.from_dict(summary_dict, orient="index")
+    #     table = table.reset_index(names="metric")
+    #     for train_logger in self.loggers:
+    #         if isinstance(train_logger, pl.loggers.tensorboard.TensorBoardLogger):
+    #             train_logger.experiment.add_text(name, table.to_string(), global_step=self.current_epoch)
+    #         elif isinstance(train_logger, pl.loggers.wandb.WandbLogger):
+    #             train_logger.log_table(key=name, dataframe=table, step=self.global_step)
+    #         else:
+    #             logger.warning(f"pl.Trainer.logger of type {type(train_logger)} can not store text.")
 
     @staticmethod
     def _detach_tensors_in_dict(d: Dict) -> Dict:
@@ -237,7 +206,7 @@ class GenerativeNERModel(pl.LightningModule):
                 d[k] = v.detach().cpu()
         return d
 
-    def compute_metrics(self, reset=False):
+    def compute_metrics(self):
         assert len(self.ground_truth_entities) == len(self.entity_strings_predicted)
 
         statistics = {ent: {"tp": 0, "fp": 0, "fn": 0, "support": 0} for ent in self.entity_set}
@@ -328,10 +297,12 @@ class GenerativeNERModel(pl.LightningModule):
             "F1": macro_f1,
             "Support": support_all,
         }
-        if reset:
-            self.entity_strings_predicted = []
-            self.ground_truth_entities = []
         return {"ner_clf_report": clf_report, "ner_micro_f1": micro_f1, "ner_macro_f1": macro_f1}
+
+    def _reset_predictions(self):
+        self.entity_strings_predicted = []
+        self.ground_truth_entities = []
+        self.entity_strings_ground_truth = []
 
     def configure_optimizers(self):
         optimiser = Optimiser.from_config(

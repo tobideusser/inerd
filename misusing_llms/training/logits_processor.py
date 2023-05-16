@@ -152,6 +152,9 @@ class InformedNERDecoderLogitsProcessor(LogitsProcessor):
                 if prompt_id != self.tokeniser.pad_token_id
             ]
 
+            # add leading space to first prompt token id (to make sampling from it (case 4) more natural)
+            prompt_ids[i][0] = self.tokeniser(" " + self.tokeniser.decode(prompt_ids[i][0])).input_ids[0]
+
         # save the device the scores are on (again for easier access)
         device = scores.device
 
