@@ -17,6 +17,7 @@ Parsing:
   dataset_name: "CoNLL-2003"
   debug_size: null
   type_mapping:
+    # conll2003
     PER: "Person"
     LOC: "Location"
     ORG: "Organisation"
@@ -72,7 +73,6 @@ Training:
   - seed: *seed
 
     wandb_logging: true
-    tensorboard_logging: false
     csv_logging: true
 
     model_params:
@@ -86,7 +86,7 @@ Training:
         fan_in_fan_out: false
 
     generation_params:
-      informed_generation: false
+      informed_generation: true
       num_beams: 1
       do_sample: false
       max_new_tokens: 100

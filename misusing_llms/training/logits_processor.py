@@ -32,9 +32,13 @@ class InformedNERDecoderLogitsProcessor(LogitsProcessor):
         # apparently, the string ". \n" gets tokenised as a *single* token. This behaviour has been observed from the
         # following tokenisers:
         #   - bigscience/bloom
+        #   - togethercomputer/RedPajama
         # Therefore, we add the token id for this to self.combine_token_ids
         self.combine_token_ids = self._tokenise_with_leading_space(text=self.combine_token)
-        if "bigscience/bloom" in self.tokeniser.name_or_path:
+        if (
+            "bigscience/bloom" in self.tokeniser.name_or_path
+            or "togethercomputer/RedPajama" in self.tokeniser.name_or_path
+        ):
             self.combine_token_ids.append(self.tokeniser(text=". " + self.combine_token).input_ids)
 
         self.entity_separator_token_ids = self._tokenise_with_leading_space(text=self.entity_separator_token)
@@ -146,6 +150,13 @@ class InformedNERDecoderLogitsProcessor(LogitsProcessor):
                             f"Token ids:\n{prompt_ids[i]}"
                         )
                         raise ValueError
+                    except IndexError:
+                        logger.error(
+                            f"No combine token id found in the input! Maybe this is the special case for '. \\n'?\n"
+                            f"Sentence:\n{self.tokeniser.decode(prompt_ids[i])}"
+                            f"Token ids:\n{prompt_ids[i]}"
+                        )
+                        raise IndexError
             prompt_ids[i] = [
                 prompt_id
                 for prompt_id in prompt_ids[i][:position_in_input_ids]
