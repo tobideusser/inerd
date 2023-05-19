@@ -32,14 +32,14 @@ class InformedNERDecoderLogitsProcessor(LogitsProcessor):
         # apparently, the string ". \n" gets tokenised as a *single* token. This behaviour has been observed from the
         # following tokenisers:
         #   - bigscience/bloom
-        #   - togethercomputer/RedPajama
         # Therefore, we add the token id for this to self.combine_token_ids
         self.combine_token_ids = self._tokenise_with_leading_space(text=self.combine_token)
-        if (
-            "bigscience/bloom" in self.tokeniser.name_or_path
-            or "togethercomputer/RedPajama" in self.tokeniser.name_or_path
-        ):
+        if "bigscience/bloom" in self.tokeniser.name_or_path:
             self.combine_token_ids.append(self.tokeniser(text=". " + self.combine_token).input_ids)
+        # the same thing happens for the string " \n " when using the following tokenisers:
+        #   - togethercomputer/RedPajama
+        elif "togethercomputer/RedPajama" in self.tokeniser.name_or_path:
+            self.combine_token_ids.append(self.tokeniser(text=" " + self.combine_token + " ").input_ids)
 
         self.entity_separator_token_ids = self._tokenise_with_leading_space(text=self.entity_separator_token)
 
@@ -169,59 +169,78 @@ class InformedNERDecoderLogitsProcessor(LogitsProcessor):
         # save the device the scores are on (again for easier access)
         device = scores.device
 
+        # determine if we are in the entity content generation phase
+        case4: List[bool] = []
+        for input_ids_ in input_ids.tolist():
+            flag = None
+            for input_id in reversed(input_ids_):
+                if [input_id] in self.combine_token_ids + self.entity_separator_token_ids:
+                    flag = False
+                    break
+                elif [input_id] in self.type_content_separator_token_ids:
+                    flag = True
+                    break
+            if flag is None:
+                raise ValueError("No combine token, entity separator token, or content separator token found in input!")
+            case4.append(flag)
+
         # loop through batch
         for i, previous_token_id in enumerate(previous_token_ids.tolist()):
-            if [previous_token_id] in self.combine_token_ids + self.entity_separator_token_ids:
-                # case 1:
-                #   After the "combine_token" or the entity separator (";") the first token of an entity type or the
-                #   end of sequence (EOS) token has to be predicted.
-                scores[i].masked_fill_(mask=self.mask_rule1.to(device), value=self.mask_value)
-            elif previous_token_id in self.entity_type_token_ids_begin_and_mid_flattened:
-                # case 2:
-                #   After predicting the first token of any entity type token, the entity type must be completed before
-                #   any other tokens are predicted.
+            if not case4[i]:
+                if [previous_token_id] in self.combine_token_ids + self.entity_separator_token_ids:
+                    # case 1:
+                    #   After the "combine_token" or the entity separator (";") the first token of an entity type or the
+                    #   end of sequence (EOS) token has to be predicted.
+                    scores[i].masked_fill_(mask=self.mask_rule1.to(device), value=self.mask_value)
+                elif previous_token_id in self.entity_type_token_ids_begin_and_mid_flattened:
+                    # case 2:
+                    #   After predicting the first token of any entity type token, the entity type must be completed
+                    #   before any other tokens are predicted.
 
-                # get tuple from entity type lookup, this tells us which entity type the token belongs to
-                entity_type_position = self.entity_type_token_ids_begin_and_mid_lookup[
-                    self.entity_type_token_ids_begin_and_mid_flattened.index(previous_token_id)
-                ]
-
-                # apply the mask
-                scores[i].masked_fill_(mask=self.masks_rule2[entity_type_position].to(device), value=self.mask_value)
-            elif [previous_token_id] in self.entity_type_token_ids_end:
-                # case 3:
-                #   After predicting the last token of an entity type, the type-content separator (":") has to be
-                #   predicted.
-                scores[i].masked_fill_(mask=self.mask_rule3.to(device), value=self.mask_value)
-            elif [previous_token_id] in self.type_content_separator_token_ids:
-                # case 4a:
-                #   After the type-content separator (":") any token from the input may be predicted.
-
-                # create the mask (specific for each input)
-                mask_rule4a = torch.ones(self.vocab_size, dtype=torch.bool, device=device)
-                mask_rule4a[prompt_ids[i]] = False
-
-                # apply the mask
-                scores[i].masked_fill_(mask=mask_rule4a, value=self.mask_value)
-            elif previous_token_id in prompt_ids[i]:
-                # case 4b:
-                #   After a token from the input has been predicted, the only allowed tokens for prediction are either
-                #   the entity separator (";") or the token following the previous token in the input.
-
-                try:
-                    next_token_id = prompt_ids[i][prompt_ids[i].index(previous_token_id) + 1]
-
-                    # deepcopy "incomplete" mask for rule 4b
-                    mask_rule4b = deepcopy(self.mask_rule4b_incomplete)
-
-                    # "complete" the mask by adding the next token id
-                    mask_rule4b[next_token_id] = False
+                    # get tuple from entity type lookup, this tells us which entity type the token belongs to
+                    entity_type_position = self.entity_type_token_ids_begin_and_mid_lookup[
+                        self.entity_type_token_ids_begin_and_mid_flattened.index(previous_token_id)
+                    ]
 
                     # apply the mask
-                    scores[i].masked_fill_(mask=mask_rule4b.to(device), value=self.mask_value)
-                except IndexError:
-                    # IndexError -> we are the end of the prompt, thus, the only allowed token ids are from the entity
-                    # separator
-                    scores[i].masked_fill_(mask=self.mask_rule4b_incomplete.to(device), value=self.mask_value)
+                    scores[i].masked_fill_(
+                        mask=self.masks_rule2[entity_type_position].to(device), value=self.mask_value
+                    )
+                elif [previous_token_id] in self.entity_type_token_ids_end:
+                    # case 3:
+                    #   After predicting the last token of an entity type, the type-content separator (":") has to be
+                    #   predicted.
+                    scores[i].masked_fill_(mask=self.mask_rule3.to(device), value=self.mask_value)
+            else:
+                if [previous_token_id] in self.type_content_separator_token_ids:
+                    # case 4a:
+                    #   After the type-content separator (":") any token from the input may be predicted.
+
+                    # create the mask (specific for each input)
+                    mask_rule4a = torch.ones(self.vocab_size, dtype=torch.bool, device=device)
+                    mask_rule4a[prompt_ids[i]] = False
+
+                    # apply the mask
+                    scores[i].masked_fill_(mask=mask_rule4a, value=self.mask_value)
+                elif previous_token_id in prompt_ids[i]:
+                    # case 4b:
+                    #   After a token from the input has been predicted, the only allowed tokens for prediction are
+                    #   either the entity separator (";") or the token following the previous token in the input.
+
+                    try:
+                        next_token_id = prompt_ids[i][prompt_ids[i].index(previous_token_id) + 1]
+
+                        # deepcopy "incomplete" mask for rule 4b
+                        mask_rule4b = deepcopy(self.mask_rule4b_incomplete)
+
+                        # "complete" the mask by adding the next token id
+                        mask_rule4b[next_token_id] = False
+
+                        # apply the mask
+                        scores[i].masked_fill_(mask=mask_rule4b.to(device), value=self.mask_value)
+                    except IndexError:
+                        # IndexError -> we are the end of the prompt, thus, the only allowed token ids are from the
+                        # entity separator
+                        scores[i].masked_fill_(mask=self.mask_rule4b_incomplete.to(device), value=self.mask_value)
 
         return scores
