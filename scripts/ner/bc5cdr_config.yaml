@@ -1,0 +1,126 @@
+# Base directory to store all task outputs
+base_dir: "/cluster/data/experiments/misusing_llms/bc5cdr"
+seed: &seed 3141
+
+###########
+# Parsing #
+###########
+
+Parsing:
+  dataset: "BC5CDR"
+  path_to_data_folders: "/cluster/data/ner/bc5cdr"
+  dataset_name: "BC5CDR"
+  debug_size: null
+#  type_mapping:
+#    # conll2003
+#    PER: "Person"
+#    LOC: "Location"
+#    ORG: "Organisation"
+#    MISC: "Miscellaneous"
+
+################
+# Tokenisation #
+################
+
+# models too large for one 32gb GPU:
+# "bigscience/bloom-1b7"
+# "facebook/opt-2.7b"
+
+# models fitting on one 32gb GPU:
+# "facebook/opt-1.3b"
+# "bigscience/bloom-1b1"
+# "EleutherAI/gpt-neo-1.3B"
+# "bigscience/bloom-560m"
+# "facebook/opt-125m"
+
+# models fitting on one 32gb GPU with LORA:
+# "togethercomputer/RedPajama-INCITE-Base-3B-v1"
+# "togethercomputer/RedPajama-INCITE-Base-7B-v0.1"
+
+
+# models fitting on two 32gb GPUs with fsdp and cpu offloading:
+# "bigscience/bloom-1b7"
+# "gpt2-xl"
+
+# models not fitting on four 32gb GPUs with fsdp and cpu offloading:
+# "bigscience/bloom-3b"
+# "togethercomputer/RedPajama-INCITE-Base-3B-v1"
+# "facebook/opt-2.7b"
+
+# models fitting on four 32gb GPUs with fsdp, cpu offloading, and manual wrapping:
+# "togethercomputer/RedPajama-INCITE-Base-3B-v1"
+
+# models fitting on eight 32gb GPUs with fsdp, cpu offloading, and manual wrapping:
+# "togethercomputer/RedPajama-INCITE-Base-7B-v0.1"
+
+Tokenisation:
+  tokeniser_name: &modelname "togethercomputer/RedPajama-INCITE-Base-3B-v1"
+  special_tokens: null
+  combine_token: "\n"
+
+
+##################
+# Model Training #
+##################
+
+Training:
+
+  - seed: *seed
+
+    wandb_logging: true
+    csv_logging: true
+
+    model_params:
+      model_name: *modelname
+      load_in_8bit: False
+      lora: true
+      lora_config:
+        r: 8
+        lora_alpha: 32
+        lora_dropout: 0.1
+        fan_in_fan_out: false
+
+    generation_params:
+      informed_generation: true
+      num_beams: 1
+      do_sample: false
+      max_new_tokens: 100
+
+    training_params:
+      optimiser:
+        type_: 'adamW'
+        lr: 1.e-5
+        weight_decay: 0.01
+
+#      lr_scheduler:
+#        type_: 'lin_warmup'
+#        interval: 'step'
+#        lr_warmup: 0.1
+
+      trainer:
+        max_epochs: 10
+        accumulate_grad_batches: 1 # [2, 4]  # 4
+        gradient_clip_val: 1  # [1, 10]  # 10
+        precision: 32
+#        precision: 16
+        val_check_interval: 1. # 0.25  # 1.
+
+      callbacks:
+        monitor_var: 'valid-ner_micro_f1'
+        monitor_var_mode: 'max'
+        apply_early_stopping: false
+        patience: null
+        save_top_k: 1
+
+      metrics:
+        nerf1: null
+#        bleu:
+#          n_gram: 4
+#          smooth: false
+#          weights: null
+
+      data_loading:
+        batch_size: 2
+#        drop_last: false
+        combine_train_valid: false
+        validate_on_test_set: false
