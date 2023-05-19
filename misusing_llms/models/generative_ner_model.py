@@ -217,8 +217,11 @@ class GenerativeNERModel(pl.LightningModule):
         # Count TP, FP and FN per type
         for prediction, ground_truth in zip(predicted_entities, self.ground_truth_entities):
             for entity_type in self.entity_set:
-                pred_ents = {ent.words for ent in prediction if ent.type_ == entity_type}
-                gt_ents = {" ".join(ent["words"]) for ent in ground_truth if ent["type_"] == entity_type}
+                # delete white spaces, they just mess up the evaluation
+                pred_ents = {ent.words.replace(" ", "") for ent in prediction if ent.type_ == entity_type}
+                gt_ents = {
+                    "".join(ent["words"]).replace(" ", "") for ent in ground_truth if ent["type_"] == entity_type
+                }
                 statistics[entity_type]["support"] += len(gt_ents)
                 statistics[entity_type]["tp"] += len(pred_ents & gt_ents)
                 statistics[entity_type]["fp"] += len(pred_ents - gt_ents)

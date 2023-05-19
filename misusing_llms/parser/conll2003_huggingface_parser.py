@@ -11,9 +11,8 @@ class CoNLL2003HuggingFaceParser(BaseParser):
     def __init__(
         self, type_mapping: Optional[Dict] = None, debug_size: Optional[int] = None, dataset_name: Optional[str] = None
     ):
-        super().__init__(type_mapping=type_mapping)
+        super().__init__(type_mapping=type_mapping, debug_size=debug_size)
         self.dataset_name = dataset_name if dataset_name else "CoNLL2003"
-        self.debug_size = debug_size
 
     def parse(self) -> NERCorpus:
         dataset = load_dataset("conll2003")

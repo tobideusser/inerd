@@ -86,7 +86,7 @@ Training:
         fan_in_fan_out: false
 
     generation_params:
-      informed_generation: true
+      informed_generation: false
       num_beams: 1
       do_sample: false
       max_new_tokens: 100

@@ -46,10 +46,11 @@ class Entity:
 
 @dataclass
 class Sentence:
-    words: List[str]
-    entity_tags: List[int]
-    id_: int
+    id_: Union[int, str]
+    entity_tags: Optional[List[int]] = None
+    words: Optional[List[str]] = None
     entity_label: Optional[List[str]] = None
+    text: Optional[str] = None
 
     # token_ids: Optional[List[int]] = None
     # tokens: Optional[List[str]] = None
@@ -76,6 +77,8 @@ class Sentence:
 
     @property
     def content(self) -> str:
+        if self.text:
+            return self.text
         if not self._content:
             self._content = " ".join(self.words)
         return self._content

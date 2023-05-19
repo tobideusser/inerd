@@ -10,10 +10,12 @@ class BaseParser(ABC):
     PARSER = {
         "conll2003": "misusing_llms.parser.conll2003_huggingface_parser.CoNLL2003HuggingFaceParser",
         "CoNLL-2003": "misusing_llms.parser.conll2003_huggingface_parser.CoNLL2003HuggingFaceParser",
+        "BC5CDR": "misusing_llms.parser.bc5cdr_parser.BC5CDRParser",
     }
 
-    def __init__(self, type_mapping: Optional[Dict] = None):
+    def __init__(self, type_mapping: Optional[Dict] = None, debug_size: Optional[int] = None):
         self.type_mapping = type_mapping
+        self.debug_size = debug_size
 
         self.entity_tag_to_label = None
         self._begin_tags = None

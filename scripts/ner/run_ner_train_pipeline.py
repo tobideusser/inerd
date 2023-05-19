@@ -23,9 +23,16 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--config",
-        default=os.path.join(project_path, "scripts", "ner", "conll2003", "config.yaml"),
+        default=None,
         type=str,
         help="Path to config",
+    )
+    parser.add_argument(
+        "--dataset",
+        default=None,
+        type=str,
+        help="Dataset name, used to load various configs, i.e. conll2003 loads the conll2003_config.yaml config. "
+        "Ignored if --config is set",
     )
     parser.add_argument(
         "--cuda-ids",
@@ -60,7 +67,7 @@ def parse_args() -> argparse.Namespace:
         help="Method to expand config for grid search",
     )
     parser.add_argument("--log-to-tmux", action="store_true", help="Log to several tmux panes.")
-    parser.add_argument("--project-name", type=str, default="misusing-llms", help="Name of project.")
+    parser.add_argument("--project-name", type=str, default="iNERD", help="Name of project.")
     parser.add_argument("--run-name", type=str, default=None, help="Name of run.")
     return parser.parse_args()
 
@@ -68,7 +75,16 @@ def parse_args() -> argparse.Namespace:
 def main():
     args = parse_args()
 
-    config = yaml.safe_load(open(args.config, "r"))
+    if args.config:
+        config = yaml.safe_load(open(args.config, "r"))
+    else:
+        dataset = args.dataset
+        if dataset == "conll2003":
+            config = yaml.safe_load(open(os.path.join(project_path, "scripts", "ner", "conll2003_config.yaml"), "r"))
+        elif dataset == "bc5cdr":
+            config = yaml.safe_load(open(os.path.join(project_path, "scripts", "ner", "bc5cdr_config.yaml"), "r"))
+        else:
+            raise ValueError(f"Dataset {dataset} not known.")
 
     base_dir = config["base_dir"]
 
@@ -81,6 +97,7 @@ def main():
     warm_start = args.warm_start  # False  # continue training from an existing checkpoint
     gs_expansion_method: str = args.gs_expansion_method
     run_name = "debug" if is_debug() else args.run_name
+    project_name = args.project_name if args.dataset is None else args.project_name + "-" + args.dataset
 
     # fixes pytorch memory leak
     # if use_cuda:
@@ -147,7 +164,7 @@ def main():
         log_to_tmux=args.log_to_tmux,
         force=force,
         results_store=results_store,
-        project_name=args.project_name,
+        project_name=project_name,
         run_name=run_name,
     )
 
