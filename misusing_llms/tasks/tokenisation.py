@@ -19,6 +19,7 @@ class Tokenisation(Task):
         seed: int = 3141,
         tokeniser_name: Optional[str] = None,
         train_mode: bool = True,
+        add_leading_space: bool = True,
     ):
         super().__init__()
 
@@ -26,6 +27,7 @@ class Tokenisation(Task):
         self.combine_token = combine_token
         self.special_tokens = special_tokens
         self.tokeniser_name = tokeniser_name
+        self.add_leading_space = add_leading_space
         self.seed = seed
 
         self.train_mode = train_mode
@@ -35,7 +37,10 @@ class Tokenisation(Task):
     def _tokenise_corpus(self, corpus: NERCorpus) -> NERCorpus:
 
         for sentence in tqdm(corpus.sentences):
-            prompt_tokens = sentence.content + " " + self.combine_token
+            if self.add_leading_space:
+                prompt_tokens = " " + sentence.content + " " + self.combine_token
+            else:
+                prompt_tokens = sentence.content + " " + self.combine_token
             input_tokens = prompt_tokens + " " + sentence.entity_string + self.tokeniser.eos_token
 
             sentence.input_ids = self.tokeniser(input_tokens).input_ids

@@ -19,6 +19,7 @@ class InformedNERDecoderLogitsProcessor(LogitsProcessor):
         combine_token: str,
         entity_separator_token: str,
         type_content_separator_token: str,
+        batch_size: int,
         mask_value: int = -1000,
     ):
         self.tokeniser = tokeniser
@@ -95,6 +96,11 @@ class InformedNERDecoderLogitsProcessor(LogitsProcessor):
         self.mask_rule4b_incomplete[self.entity_separator_token_ids[0][0]] = False
         self.mask_rule4b_incomplete[self.entity_separator_token_ids[1][0]] = False
 
+        # to store the position of the previously predicted token
+        self.rule4_memory = [[-1]] * batch_size
+
+        self.rule4_edge_case_flag = [False] * batch_size
+
     def _find_token_id_in_entity_type_list(self, token_id: int) -> Tuple[int, int]:
         for i, entity_type in enumerate(self.entity_type_token_ids):
             for ii, entity_type_token_id in enumerate(entity_type):
@@ -110,30 +116,10 @@ class InformedNERDecoderLogitsProcessor(LogitsProcessor):
         else:
             return [without_leading_space, with_leading_space]
 
-    def __call__(self, input_ids: LongTensor, scores: FloatTensor):
-        """
-        Enforced rules for NER generation:
-          1.  After the "combine_token" or the entity separator (";") the first token of an entity type or the end of
-              sequence (EOS) token has to be predicted.
-          2.  After predicting the first token of any entity type token, the entity type must be completed before any
-              other tokens are predicted.
-          3.  After predicting the last token of an entity type, the type-content separator (":") has to be predicted.
-          4.  During the entity content prediction phase, i.e. after ":" and before ";" has been predicted, only
-              token_ids present in the input_ids and the entity separator (";") are allowed for prediction. This rule
-              is divided into two "sub-rules":
-              4a.   After the type-content separator (":") any token from the input may be predicted.
-              4b.   After a token from the input has been predicted, the only allowed tokens for prediction are
-                    either the entity separator (";") or the token following the previous token in the input.
-        """
-        # dimension of tensor inputs
-        # input_ids: (batch_size x padded sequence length)
-        # scores: (batch_size x vocab size)
-
-        # save the previous token for easier access
-        previous_token_ids = input_ids[:, -1]
-
+    def _get_prompt_ids(self, input_ids: LongTensor) -> Tuple[List[List[int]], List[List[int]]]:
         # create a list of lists containing each token id present in the prompt / input. This is required for rule 4.
         prompt_ids = input_ids.tolist()
+        prompt_ids_with_leading_space = [] * len(prompt_ids)
         for i, input_ids_for_each_object in enumerate(prompt_ids):
             try:
                 position_in_input_ids = input_ids_for_each_object.index(self.combine_token_ids[1][0])
@@ -164,7 +150,34 @@ class InformedNERDecoderLogitsProcessor(LogitsProcessor):
             ]
 
             # add leading space to first prompt token id (to make sampling from it (case 4) more natural)
-            prompt_ids[i][0] = self.tokeniser(" " + self.tokeniser.decode(prompt_ids[i][0])).input_ids[0]
+            # prompt_ids_with_leading_space[i] = deepcopy(prompt_ids[i])
+            # prompt_ids_with_leading_space[i][0] = self.tokeniser(
+            #     " " + self.tokeniser.decode(prompt_ids[i][0])
+            # ).input_ids[0]
+
+        return prompt_ids, prompt_ids_with_leading_space
+
+    def __call__(self, input_ids: LongTensor, scores: FloatTensor):
+        """
+        Enforced rules for NER generation:
+          1.  After the "combine_token" or the entity separator (";") the first token of an entity type or the end of
+              sequence (EOS) token has to be predicted.
+          2.  After predicting the first token of any entity type token, the entity type must be completed before any
+              other tokens are predicted.
+          3.  After predicting the last token of an entity type, the type-content separator (":") has to be predicted.
+          4.  During the entity content prediction phase, i.e. after ":" and before ";" has been predicted, only
+              token_ids present in the input_ids and the entity separator (";") are allowed for prediction. This rule
+              is divided into two "sub-rules":
+              4a.   After the type-content separator (":") any token from the input may be predicted.
+              4b.   After a token from the input has been predicted, the only allowed tokens for prediction are
+                    either the entity separator (";") or the token following the previous token in the input.
+        """
+        # dimension of tensor inputs
+        # input_ids: (batch_size x padded sequence length)
+        # scores: (batch_size x vocab size)
+
+        # save the previous token for easier access
+        previous_token_ids = input_ids[:, -1]
 
         # save the device the scores are on (again for easier access)
         device = scores.device
@@ -212,35 +225,94 @@ class InformedNERDecoderLogitsProcessor(LogitsProcessor):
                     #   predicted.
                     scores[i].masked_fill_(mask=self.mask_rule3.to(device), value=self.mask_value)
             else:
+                prompt_ids, prompt_ids_with_leading_space = self._get_prompt_ids(input_ids=input_ids)
+
                 if [previous_token_id] in self.type_content_separator_token_ids:
                     # case 4a:
                     #   After the type-content separator (":") any token from the input may be predicted.
 
-                    # create the mask (specific for each input)
-                    mask_rule4a = torch.ones(self.vocab_size, dtype=torch.bool, device=device)
-                    mask_rule4a[prompt_ids[i]] = False
+                    # super specific edge case
+                    prompt_decoded = self.tokeniser.decode(prompt_ids)
+                    predicted_token_id_without_masking = int(torch.argmax(scores[i]))
+                    predicted_token_without_masking = self.tokeniser.decode(predicted_token_id_without_masking)
+                    if predicted_token_without_masking in prompt_decoded:
+                        # model is already correct, no need for additional masking
 
-                    # apply the mask
-                    scores[i].masked_fill_(mask=mask_rule4a, value=self.mask_value)
+                        if predicted_token_id_without_masking in prompt_ids:
+                            # this should be the norm, as the prompt id should always be split the same, regardless of
+                            # leading space or not!
+                            self.rule4_memory[i] = [
+                                ii for ii, x in enumerate(prompt_ids[i]) if x == predicted_token_id_without_masking
+                            ]
+                        else:
+                            # BUT, for whatever reason, we sometimes get very weird results from the tokeniser.
+                            # example: "Duran" is split into "D" "uran", whereas " Duran" is split into " Dur" "an"
+                            # Therefore, if predicted_token_id_without_masking is not in the prompt, this is very likely
+                            # the case.
+                            self.rule4_edge_case_flag[i] = True
+                            if predicted_token_id_without_masking != prompt_ids_with_leading_space[0]:
+                                raise AssertionError(
+                                    f"Super Edge Case Detected?\n"
+                                    f"Predicted token: {predicted_token_without_masking}\n"
+                                    f"Predicted token id: {predicted_token_id_without_masking}\n"
+                                    f"Prompt: {prompt_decoded}\n"
+                                    f"Prompt ids: {prompt_ids}\n"
+                                    f"Prompt with leading space: {self.tokeniser.decode(prompt_ids_with_leading_space)}"
+                                    f"\n"
+                                    f"Prompt with leading space ids: {prompt_ids_with_leading_space}"
+                                )
+                    else:
+                        # create the mask (specific for each input)
+                        mask_rule4a = torch.ones(self.vocab_size, dtype=torch.bool, device=device)
+                        mask_rule4a[prompt_ids[i]] = False
+
+                        # apply the mask
+                        scores[i].masked_fill_(mask=mask_rule4a, value=self.mask_value)
+
+                        predicted_token_id = int(torch.argmax(scores[i]))
+                        predicted_token = self.tokeniser.decode(predicted_token_id)
+                        if predicted_token in [",", ".", " .", " ,"]:
+                            print("WHAT?! DEBUG HERE!")
+
+                        # save position of predicted token
+                        self.rule4_memory[i] = [ii for ii, x in enumerate(prompt_ids[i]) if x == predicted_token_id]
                 elif previous_token_id in prompt_ids[i]:
                     # case 4b:
                     #   After a token from the input has been predicted, the only allowed tokens for prediction are
                     #   either the entity separator (";") or the token following the previous token in the input.
 
                     try:
-                        next_token_id = prompt_ids[i][prompt_ids[i].index(previous_token_id) + 1]
+                        if self.rule4_edge_case_flag[i]:
+                            self.rule4_edge_case_flag[i] = False  # reset flag
+                            # the edge case can only appear on the beginning of the prompt, thus we simply have to
+                            # generate the next token
+                            next_token_ids = [prompt_ids[i][1]]
+                        else:
+                            next_token_positions = [previous_position + 1 for previous_position in self.rule4_memory[i]]
+                            next_token_ids = [
+                                prompt_ids[i][next_token_position] for next_token_position in next_token_positions
+                            ]
 
                         # deepcopy "incomplete" mask for rule 4b
                         mask_rule4b = deepcopy(self.mask_rule4b_incomplete)
 
-                        # "complete" the mask by adding the next token id
-                        mask_rule4b[next_token_id] = False
+                        # "complete" the mask by adding the next token ids
+                        for next_token_id in next_token_ids:
+                            mask_rule4b[next_token_id] = False
 
                         # apply the mask
                         scores[i].masked_fill_(mask=mask_rule4b.to(device), value=self.mask_value)
+
+                        # save position of predicted token
+                        self.rule4_memory[i] = [
+                            ii for ii, x in enumerate(prompt_ids[i]) if x == int(torch.argmax(scores[i]))
+                        ]
                     except IndexError:
                         # IndexError -> we are the end of the prompt, thus, the only allowed token ids are from the
                         # entity separator
                         scores[i].masked_fill_(mask=self.mask_rule4b_incomplete.to(device), value=self.mask_value)
-
+            predicted_token_id = int(torch.argmax(scores[i]))
+            predicted_token = self.tokeniser.decode(predicted_token_id)
+            if ("," in predicted_token or "." in predicted_token) and self.tokeniser.decode(input_ids[i])[-1] == ":":
+                print("WHAT?! DEBUG HERE!")
         return scores

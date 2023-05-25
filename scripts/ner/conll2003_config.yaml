@@ -62,6 +62,7 @@ Tokenisation:
   tokeniser_name: &modelname "togethercomputer/RedPajama-INCITE-Base-3B-v1"
   special_tokens: null
   combine_token: "\n"
+  add_leading_space: false
 
 
 ##################
@@ -86,7 +87,7 @@ Training:
         fan_in_fan_out: false
 
     generation_params:
-      informed_generation: false
+      informed_generation: true
       num_beams: 1
       do_sample: false
       max_new_tokens: 100

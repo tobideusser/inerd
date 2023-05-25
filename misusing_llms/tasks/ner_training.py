@@ -274,6 +274,7 @@ class NERTraining(Task):
                     combine_token=combine_token,
                     entity_separator_token=";",
                     type_content_separator_token=":",
+                    batch_size=self.training_params["data_loading"]["batch_size"],
                 )
             )
         else:
