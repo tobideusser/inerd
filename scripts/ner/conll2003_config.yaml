@@ -2,9 +2,9 @@
 #base_dir: "/cluster/data/experiments/misusing_llms/conll2003_v1"
 #base_dir: "/scratch/data/misusing_llms/conll2003_dev"
 #base_dir: "/cluster/data/experiments/misusing_llms/conll2003_fsdp"
-#base_dir: "/cluster/data/experiments/misusing_llms/conll2003_debug"
+base_dir: "/cluster/data/experiments/misusing_llms/conll2003_debug"
 #base_dir: "/cluster/data/experiments/misusing_llms/conll2003_singlegpu"
-base_dir: "/cluster/data/experiments/misusing_llms/conll2003_v2"
+#base_dir: "/cluster/data/experiments/misusing_llms/conll2003_v2"
 seed: &seed 3141
 
 ###########
@@ -73,7 +73,7 @@ Training:
 
   - seed: *seed
 
-    wandb_logging: true
+    wandb_logging: false
     csv_logging: true
 
     model_params:

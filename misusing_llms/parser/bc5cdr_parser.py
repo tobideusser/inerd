@@ -28,49 +28,52 @@ class BC5CDRParser(BaseParser):
             "test": os.path.join(path_to_data_folders, test_file_name),
         }
 
+    def _parse_bc5cdr_tree(self, tree: ET.ElementTree):
+        root = tree.getroot()
+        data = []
+        i = 0
+        for child in root:
+            if child.tag == "document":
+                document_id = child.find("id").text
+                paraphraps = child.findall("passage")
+                for ii, paragraph in enumerate(paraphraps):
+                    text = paragraph.find("text").text
+                    annotations = paragraph.findall("annotation")
+                    paragraph_offset = int(paragraph.find("offset").text)
+                    entities = []
+                    for annotation in annotations:
+                        information = annotation.findall("infon")
+                        entity_type = ""
+                        for info in information:
+                            key = info.attrib.get("key", None)
+                            if key == "type":
+                                entity_type = info.text
+                        if entity_type == "":
+                            raise KeyError("No entity type found")
+                        location = annotation.find("location")
+                        offset = int(location.attrib["offset"]) - paragraph_offset
+                        length = int(location.attrib["length"])
+                        words = annotation.find("text").text
+                        entities.append(
+                            Entity(
+                                words=words,
+                                type_=entity_type,
+                                start=offset,
+                                end=offset + length,
+                            )
+                        )
+                    data.append(Sentence(text=text, id_=document_id + "-" + str(ii), entities_anno=entities))
+                    i += 1
+                    if self.debug_size and i >= self.debug_size:
+                        return data
+
     def parse(self) -> NERCorpus:
         corpus = dict()
         for split, file_path in self.file_paths.items():
-            corpus[split] = []
 
             tree = ET.parse(file_path)
-            root = tree.getroot()
+            corpus[split] = self._parse_bc5cdr_tree(tree=tree)
 
-            i = 0
-            for child in root:
-                if child.tag == "document":
-                    document_id = child.find("id").text
-                    paraphraps = child.findall("passage")
-                    for ii, paragraph in enumerate(paraphraps):
-                        text = paragraph.find("text").text
-                        annotations = paragraph.findall("annotation")
-                        entities = []
-                        for annotation in annotations:
-                            information = annotation.findall("infon")
-                            entity_type = ""
-                            for info in information:
-                                key = info.attrib.get("key", None)
-                                if key == "type":
-                                    entity_type = info.text
-                            if entity_type == "":
-                                raise KeyError("No entity type found")
-                            location = annotation.find("location")
-                            offset = int(location.attrib["offset"])
-                            length = int(location.attrib["length"])
-                            entities.append(
-                                Entity(
-                                    words=text[offset : (offset + length)],
-                                    type_=entity_type,
-                                    start=offset,
-                                    end=offset + length,
-                                )
-                            )
-                        corpus[split].append(
-                            Sentence(text=text, id_=document_id + "-" + str(ii), entities_anno=entities)
-                        )
-                        i += 1
-                        if self.debug_size and i >= self.debug_size - 1:
-                            break
             pass
 
         dataset = load_dataset("conll2003")
