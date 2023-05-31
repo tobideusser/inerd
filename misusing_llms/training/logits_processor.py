@@ -204,13 +204,16 @@ class InformedNERDecoderLogitsProcessor(LogitsProcessor):
         # first, get what is written after the token
         text_after_predicted_token = self._get_remaining_text_left_for_generation(text=text, token=token)
 
-        # tokenise this
-        token_ids_text_after_predicted_token = self.tokeniser(text_after_predicted_token).input_ids
+        if text_after_predicted_token is not None:
+            # tokenise this
+            token_ids_text_after_predicted_token = self.tokeniser(text_after_predicted_token).input_ids
 
-        # only the next token in this sequence is allowed for prediction
-        self.rule4_next_token_memory[batch_position] = [
-            token_ids[0] for token_ids in token_ids_text_after_predicted_token
-        ]
+            # only the next token in this sequence is allowed for prediction
+            self.rule4_next_token_memory[batch_position] = [
+                token_ids[0] for token_ids in token_ids_text_after_predicted_token
+            ]
+
+            # if text_after_predicted_token is None, the token is not in the text (very likely the model predicted ";").
 
     def __call__(self, input_ids: LongTensor, scores: FloatTensor):
         """
@@ -333,7 +336,7 @@ class InformedNERDecoderLogitsProcessor(LogitsProcessor):
                         #         self.rule4_edge_case_flag[i] = True
                     else:
                         mask_rule4a = torch.ones(self.vocab_size, dtype=torch.bool, device=device)
-                        mask_rule4a[predicted_token_without_masking[i]] = False
+                        mask_rule4a[prompt_ids_with_leading_space[i]] = False
 
                         # apply the mask
                         scores[i].masked_fill_(mask=mask_rule4a, value=self.mask_value)
@@ -367,41 +370,6 @@ class InformedNERDecoderLogitsProcessor(LogitsProcessor):
                     # update the rule4 memory based upon this
                     self._update_rule4_memory(text=prompt_decoded, token=predicted_token, batch_position=i)
 
-                # elif previous_token_id in prompt_ids[i]:
-                #     # case 4b:
-                #     #   After a token from the input has been predicted, the only allowed tokens for prediction are
-                #     #   either the entity separator (";") or the token following the previous token in the input.
-                #
-                #     try:
-                #         if self.rule4_edge_case_flag[i]:
-                #             self.rule4_edge_case_flag[i] = False  # reset flag
-                #             # the edge case can only appear on the beginning of the prompt, thus we simply have to
-                #             # generate the next token
-                #             next_token_ids = [prompt_ids[i][1]]
-                #         else:
-                #             next_token_positions = [previous_position + 1 for previous_position in self.rule4_memory[i]]
-                #             next_token_ids = [
-                #                 prompt_ids[i][next_token_position] for next_token_position in next_token_positions
-                #             ]
-                #
-                #         # deepcopy "incomplete" mask for rule 4b
-                #         mask_rule4b = deepcopy(self.mask_rule4b_incomplete)
-                #
-                #         # "complete" the mask by adding the next token ids
-                #         for next_token_id in next_token_ids:
-                #             mask_rule4b[next_token_id] = False
-                #
-                #         # apply the mask
-                #         scores[i].masked_fill_(mask=mask_rule4b.to(device), value=self.mask_value)
-                #
-                #         # save position of predicted token
-                #         self.rule4_memory[i] = [
-                #             ii for ii, x in enumerate(prompt_ids[i]) if x == int(torch.argmax(scores[i]))
-                #         ]
-                #     except IndexError:
-                #         # IndexError -> we are the end of the prompt, thus, the only allowed token ids are from the
-                #         # entity separator
-                #         scores[i].masked_fill_(mask=self.mask_rule4b_incomplete.to(device), value=self.mask_value)
             predicted_token_id = int(torch.argmax(scores[i]))
             predicted_token = self.tokeniser.decode(predicted_token_id)
             if ("," in predicted_token or "." in predicted_token) and self.tokeniser.decode(input_ids[i])[-1] == ":":
