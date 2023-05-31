@@ -36,7 +36,7 @@ class Tokenisation(Task):
 
     def _tokenise_corpus(self, corpus: NERCorpus) -> NERCorpus:
 
-        for sentence in tqdm(corpus.sentences):
+        for sentence in tqdm(corpus.sentences, total=len(corpus)):
             if self.add_leading_space:
                 prompt_tokens = " " + sentence.content + " " + self.combine_token
             else:
@@ -48,15 +48,6 @@ class Tokenisation(Task):
 
             length_tokenised_prompt = len(self.tokeniser(prompt_tokens).input_ids)
             sentence.labels = [-100] * length_tokenised_prompt + sentence.input_ids[length_tokenised_prompt:]
-
-            # sentence.token_ids = self.tokeniser(sentence.content).input_ids
-            # sentence.tokens = self.tokeniser.convert_ids_to_tokens(sentence.token_ids)
-            #
-            # sentence.entity_string_token_ids = self.tokeniser(sentence.entity_string).input_ids
-            # sentence.entity_string_tokens = self.tokeniser.convert_ids_to_tokens(sentence.entity_string_token_ids)
-            #
-            # sentence.combine_token = self.combine_token
-            # sentence.combine_token_id = self.tokeniser(self.combine_token).input_ids
 
         return corpus
 

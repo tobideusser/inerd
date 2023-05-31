@@ -10,7 +10,7 @@ Parsing:
   dataset: "BC5CDR"
   path_to_data_folders: "/cluster/data/ner/bc5cdr"
   dataset_name: "BC5CDR"
-  debug_size: null
+  debug_size: 12
 #  type_mapping:
 #    # conll2003
 #    PER: "Person"
@@ -57,6 +57,7 @@ Tokenisation:
   tokeniser_name: &modelname "togethercomputer/RedPajama-INCITE-Base-3B-v1"
   special_tokens: null
   combine_token: "\n"
+  add_leading_space: false
 
 
 ##################

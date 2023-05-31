@@ -18,7 +18,7 @@ class Index:
 
 @dataclass
 class NamedEntityVocabulary:
-    entities: Index  # for now: IOB tags, might have to be adjusted when using non IOB methods
+    entities: Union[Index, Set[str]]  # for now: IOB tags, might have to be adjusted when using non IOB methods
 
     @classmethod
     def from_entity_tag_to_label_dict(cls, entity_tag_to_label: Dict):
@@ -26,7 +26,11 @@ class NamedEntityVocabulary:
 
     @classmethod
     def from_corpus(cls, corpus):
-        raise NotImplementedError
+        entities_ = set()
+        for sentence in corpus.sentences:
+            for entity in sentence.entities_anno:
+                entities_.add(entity.type_)
+        return cls(entities=entities_)
 
 
 @dataclass
@@ -88,7 +92,11 @@ class Sentence:
         if not self._entity_string:
             s = ""
             for entity in self.entities_anno:
-                s += entity.type_ + ": " + " ".join(entity.words) + "; "
+                if isinstance(entity.words, str):
+                    s += entity.type_ + ": " + entity.words + "; "
+                else:
+                    s += entity.type_ + ": " + " ".join(entity.words) + "; "
+
             if len(s) > 0:
                 s = s[:-1]
 
@@ -181,9 +189,12 @@ class NERCorpus:
     @property
     def entity_set(self) -> Set:
         if self._entity_set is None:
-            self._entity_set = set(
-                [entity.split("-")[1] for entity in self.vocabulary.entities.id2value.values() if len(entity) > 1]
-            )
+            if isinstance(self.vocabulary.entities, set):
+                self._entity_set = self.vocabulary.entities
+            else:
+                self._entity_set = set(
+                    [entity.split("-")[1] for entity in self.vocabulary.entities.id2value.values() if len(entity) > 1]
+                )
         return self._entity_set
 
     @property
@@ -229,6 +240,15 @@ class NERCorpus:
             return self.validation[idx - self.train_len - self.validation_len]
         else:
             raise IndexError
+
+    def __iter__(self):
+        """
+        This loops through the complete corpus, use with care! No distinction between splits is possible then.
+
+        Order: Train set, validation set, test set
+        """
+        for i in range(self.__len__()):
+            yield self.__getitem__(idx=i)
 
     @classmethod
     def from_dict(cls, d: Dict):
