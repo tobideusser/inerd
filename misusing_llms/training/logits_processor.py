@@ -210,7 +210,7 @@ class InformedNERDecoderLogitsProcessor(LogitsProcessor):
 
             # only the next token in this sequence is allowed for prediction
             self.rule4_next_token_memory[batch_position] = [
-                token_ids[0] for token_ids in token_ids_text_after_predicted_token
+                token_ids[0] for token_ids in token_ids_text_after_predicted_token if len(token_ids) > 0
             ]
 
             # if text_after_predicted_token is None, the token is not in the text (very likely the model predicted ";").
