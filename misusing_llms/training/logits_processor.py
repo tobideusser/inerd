@@ -97,11 +97,13 @@ class InformedNERDecoderLogitsProcessor(LogitsProcessor):
         self.mask_rule4b_incomplete[self.entity_separator_token_ids[1][0]] = False
 
         # to store the position of the previously predicted token
-        self.rule4_memory = [[-1]] * batch_size
+        # self.rule4_memory = [[-1]] * batch_size
 
         self.rule4_next_token_memory = [[-1]] * batch_size
+        common_special_characters = [".", ",", "'", '"', "-", "#", "$", "%", "&", "(", ")", "*", "+", "/", "!", "?"]
+        self.common_special_characters_ids = [char[0] for char in self.tokeniser(common_special_characters).input_ids]
 
-        self.rule4_edge_case_flag = [False] * batch_size
+        # self.rule4_edge_case_flag = [False] * batch_size
 
     def _find_token_id_in_entity_type_list(self, token_id: int) -> Tuple[int, int]:
         for i, entity_type in enumerate(self.entity_type_token_ids):
@@ -156,25 +158,25 @@ class InformedNERDecoderLogitsProcessor(LogitsProcessor):
 
         return prompt_ids, prompt_ids_with_leading_space
 
-    def _apply_rule4a(
-        self, scores: FloatTensor, prompt_ids: List[List[int]], batch_position: int, device: torch.device
-    ) -> FloatTensor:
-        mask_rule4a = torch.ones(self.vocab_size, dtype=torch.bool, device=device)
-        mask_rule4a[prompt_ids[batch_position]] = False
-
-        # apply the mask
-        scores[batch_position].masked_fill_(mask=mask_rule4a, value=self.mask_value)
-
-        predicted_token_id = int(torch.argmax(scores[batch_position]))
-        predicted_token = self.tokeniser.decode(predicted_token_id)
-        if predicted_token in [",", ".", " .", " ,"]:
-            print("WHAT?! DEBUG HERE! line 170")
-
-        # save position of predicted token
-        self.rule4_memory[batch_position] = [
-            i for i, x in enumerate(prompt_ids[batch_position]) if x == predicted_token_id
-        ]
-        return scores
+    # def _apply_rule4a(
+    #     self, scores: FloatTensor, prompt_ids: List[List[int]], batch_position: int, device: torch.device
+    # ) -> FloatTensor:
+    #     mask_rule4a = torch.ones(self.vocab_size, dtype=torch.bool, device=device)
+    #     mask_rule4a[prompt_ids[batch_position]] = False
+    #
+    #     # apply the mask
+    #     scores[batch_position].masked_fill_(mask=mask_rule4a, value=self.mask_value)
+    #
+    #     predicted_token_id = int(torch.argmax(scores[batch_position]))
+    #     predicted_token = self.tokeniser.decode(predicted_token_id)
+    #     if predicted_token in [",", ".", " .", " ,"]:
+    #         print("WHAT?! DEBUG HERE! line 170")
+    #
+    #     # save position of predicted token
+    #     self.rule4_memory[batch_position] = [
+    #         i for i, x in enumerate(prompt_ids[batch_position]) if x == predicted_token_id
+    #     ]
+    #     return scores
 
     def _get_remaining_text_left_for_generation(self, text: str, token: str) -> List[str]:
         """
@@ -202,12 +204,35 @@ class InformedNERDecoderLogitsProcessor(LogitsProcessor):
         text_after_predicted_token = self._get_remaining_text_left_for_generation(text=text, token=token)
 
         if text_after_predicted_token is not None:
-            # tokenise this
-            token_ids_text_after_predicted_token = self.tokeniser(text_after_predicted_token).input_ids
+            # tokenise this and get the first token
+            token_ids_text_after_predicted_token = [
+                token_ids[0] for token_ids in self.tokeniser(text_after_predicted_token).input_ids if len(token_ids) > 0
+            ]
+
+            # check for edge case of special character predicted
+            if any(
+                [
+                    True if token_id in self.common_special_characters_ids else False
+                    for token_id in token_ids_text_after_predicted_token
+                ]
+            ):
+                # this is very specific edge case: If the final character of an entity is a special character, e.g. ".",
+                # the model should be allowed to predict ".;", as this is often tokenised as a single token (for
+                # whatever reason...). Therefore, we add this to the allowed token_ids.
+                token_id_to_add = []
+                for token_id in token_ids_text_after_predicted_token:
+                    if token_id in self.common_special_characters_ids:
+                        token = self.tokeniser.decode(token_id) + ";"
+                        token_id_to_add.append(self.tokeniser(token).input_ids[0])
+                token_ids_text_after_predicted_token.extend(token_id_to_add)
+
+            # for token_id in token_id_text_after_predicted_token:
+            #     # check for edge case
+            #     if token_id in self.common_special_characters_ids:
 
             # only the next token in this sequence is allowed for prediction
             self.rule4_next_token_memory[batch_position] = [
-                token_ids[0] for token_ids in token_ids_text_after_predicted_token if len(token_ids) > 0
+                token_ids[0] for token_ids in self.tokeniser(text_after_predicted_token).input_ids if len(token_ids) > 0
             ]
 
             # if text_after_predicted_token is None, the token is not in the text (very likely the model predicted ";").
@@ -289,7 +314,7 @@ class InformedNERDecoderLogitsProcessor(LogitsProcessor):
                     #   After the type-content separator (":") any token from the input may be predicted.
 
                     predicted_token_id_without_masking = int(torch.argmax(scores[i]))
-                    predicted_token_without_masking = self.tokeniser.decode(predicted_token_id_without_masking)
+                    predicted_token_without_masking = self.tokeniser.decode(int(torch.argmax(scores[i])))
                     if predicted_token_without_masking in prompt_decoded:
                         # model is already correct, no need for additional masking, all we need to do is to make it
                         # clear what is allowed to be predicted next
