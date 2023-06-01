@@ -152,10 +152,7 @@ class InformedNERDecoderLogitsProcessor(LogitsProcessor):
             ]
 
             # add leading space to first prompt token id (to make sampling from it (case 4) more natural)
-            prompt_ids_with_leading_space[i] = deepcopy(prompt_ids[i])
-            prompt_ids_with_leading_space[i][0] = self.tokeniser(
-                " " + self.tokeniser.decode(prompt_ids[i][0])
-            ).input_ids[0]
+            prompt_ids_with_leading_space[i] = self.tokeniser(" " + self.tokeniser.decode(prompt_ids[i])).input_ids
 
         return prompt_ids, prompt_ids_with_leading_space
 
