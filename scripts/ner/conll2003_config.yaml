@@ -2,9 +2,9 @@
 #base_dir: "/cluster/data/experiments/misusing_llms/conll2003_v1"
 #base_dir: "/scratch/data/misusing_llms/conll2003_dev"
 #base_dir: "/cluster/data/experiments/misusing_llms/conll2003_fsdp"
-base_dir: "/cluster/data/experiments/misusing_llms/conll2003_debug"
+#base_dir: "/cluster/data/experiments/misusing_llms/conll2003_debug"
 #base_dir: "/cluster/data/experiments/misusing_llms/conll2003_singlegpu"
-#base_dir: "/cluster/data/experiments/misusing_llms/conll2003_v2"
+base_dir: "/cluster/data/experiments/misusing_llms/conll2003_v2"
 seed: &seed 3141
 
 ###########
@@ -41,6 +41,7 @@ Parsing:
 # models fitting on one 32gb GPU with LORA:
 # "togethercomputer/RedPajama-INCITE-Base-3B-v1"
 # "togethercomputer/RedPajama-INCITE-Base-7B-v0.1"
+# "tiiuae/falcon-7b"
 
 
 # models fitting on two 32gb GPUs with fsdp and cpu offloading:
@@ -59,7 +60,7 @@ Parsing:
 # "togethercomputer/RedPajama-INCITE-Base-7B-v0.1"
 
 Tokenisation:
-  tokeniser_name: &modelname "togethercomputer/RedPajama-INCITE-Base-3B-v1"
+  tokeniser_name: &modelname "tiiuae/falcon-7b"
   special_tokens: null
   combine_token: "\n"
   add_leading_space: false
@@ -73,12 +74,12 @@ Training:
 
   - seed: *seed
 
-    wandb_logging: false
+    wandb_logging: true
     csv_logging: true
 
     model_params:
       model_name: *modelname
-      load_in_8bit: False
+      load_in_8bit: false
       lora: true
       lora_config:
         r: 8

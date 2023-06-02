@@ -44,14 +44,25 @@ class GenerativeNERModel(pl.LightningModule):
         self.load_in_8bit: bool = model_params["load_in_8bit"]
         self.lora: bool = model_params["lora"]
 
+        trust_remote_code = "tiiuae/falcon" in self.model_name
         if self.load_in_8bit:
-            self.model = AutoModelForCausalLM.from_pretrained(self.model_name, load_in_8bit=True, device_map="auto")
+            self.model = AutoModelForCausalLM.from_pretrained(
+                self.model_name, load_in_8bit=True, device_map="auto", trust_remote_code=trust_remote_code
+            )
         else:
-            self.model = AutoModelForCausalLM.from_pretrained(self.model_name)
+            self.model = AutoModelForCausalLM.from_pretrained(self.model_name, trust_remote_code=trust_remote_code)
+
+        if self.model.lm_head.out_features != len(tokeniser):
+            self.model.resize_token_embeddings(len(tokeniser))
 
         if self.lora:
             self.lora_config = model_params["lora_config"]
-            peft_config = LoraConfig(task_type=TaskType.CAUSAL_LM, **self.lora_config)
+            if "tiiuae/falcon" in self.model_name:
+                peft_config = LoraConfig(
+                    task_type=TaskType.CAUSAL_LM, target_modules=["query_key_value"], **self.lora_config
+                )
+            else:
+                peft_config = LoraConfig(task_type=TaskType.CAUSAL_LM, **self.lora_config)
             self.model = get_peft_model(model=self.model, peft_config=peft_config)
         else:
             self.lora_config = None
@@ -81,18 +92,18 @@ class GenerativeNERModel(pl.LightningModule):
         self.best_valid_ner_micro_f1 = 0
         self.best_epoch = 0
 
-    def configure_sharded_model(self) -> None:
-        if self.model.base_model_prefix == "gpt_neox":  # redpajama model
-            self.model.gpt_neox.embed_in = wrap(self.model.gpt_neox.embed_in)
-            for i, layer in enumerate(self.model.gpt_neox.layers):
-                self.model.gpt_neox.layers[i] = wrap(layer)
-            self.model.gpt_neox.final_layer_norm = wrap(self.model.gpt_neox.final_layer_norm)
-            self.model.embed_out = wrap(self.model.embed_out)
-        else:
-            raise NotImplementedError(
-                f"manual wrapping for model_name: {self.model_name} and base_model_prefix: "
-                f"{self.model.base_model_prefix} not implemented."
-            )
+    # def configure_sharded_model(self) -> None:
+    #     if self.model.base_model_prefix == "gpt_neox":  # redpajama model
+    #         self.model.gpt_neox.embed_in = wrap(self.model.gpt_neox.embed_in)
+    #         for i, layer in enumerate(self.model.gpt_neox.layers):
+    #             self.model.gpt_neox.layers[i] = wrap(layer)
+    #         self.model.gpt_neox.final_layer_norm = wrap(self.model.gpt_neox.final_layer_norm)
+    #         self.model.embed_out = wrap(self.model.embed_out)
+    #     else:
+    #         raise NotImplementedError(
+    #             f"manual wrapping for model_name: {self.model_name} and base_model_prefix: "
+    #             f"{self.model.base_model_prefix} not implemented."
+    #         )
 
     def validation_step(self, batch: Dict, batch_idx: int) -> Dict:
         predictions = self.model.generate(

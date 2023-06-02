@@ -226,14 +226,8 @@ class InformedNERDecoderLogitsProcessor(LogitsProcessor):
                         token_id_to_add.append(self.tokeniser(token).input_ids[0])
                 token_ids_text_after_predicted_token.extend(token_id_to_add)
 
-            # for token_id in token_id_text_after_predicted_token:
-            #     # check for edge case
-            #     if token_id in self.common_special_characters_ids:
-
             # only the next token in this sequence is allowed for prediction
-            self.rule4_next_token_memory[batch_position] = [
-                token_ids[0] for token_ids in self.tokeniser(text_after_predicted_token).input_ids if len(token_ids) > 0
-            ]
+            self.rule4_next_token_memory[batch_position] = token_ids_text_after_predicted_token
 
             # if text_after_predicted_token is None, the token is not in the text (very likely the model predicted ";").
 
@@ -313,7 +307,6 @@ class InformedNERDecoderLogitsProcessor(LogitsProcessor):
                     # case 4a:
                     #   After the type-content separator (":") any token from the input may be predicted.
 
-                    predicted_token_id_without_masking = int(torch.argmax(scores[i]))
                     predicted_token_without_masking = self.tokeniser.decode(int(torch.argmax(scores[i])))
                     if predicted_token_without_masking in prompt_decoded:
                         # model is already correct, no need for additional masking, all we need to do is to make it

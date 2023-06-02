@@ -224,6 +224,7 @@ class NERTraining(Task):
             or "RedPajama" in self.model_params["model_name"]
             or "opt" in self.model_params["model_name"]
             or "gpt-2" in self.model_params["model_name"]
+            or "falcon" in self.model_params["model_name"]
         ):
             os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
@@ -231,6 +232,9 @@ class NERTraining(Task):
         if "RedPajama" in self.model_params["model_name"]:
             pad_token_id = 1  # "<|padding|>" in GPT-NEOX
             tokeniser.pad_token_id = 1
+        elif "falcon" in self.model_params["model_name"]:
+            tokeniser.add_special_tokens({"pad_token": "<|padding|>"})
+            pad_token_id = tokeniser.pad_token_id
         elif tokeniser.pad_token_id is None:
             raise NotImplementedError
         else:
@@ -265,6 +269,8 @@ class NERTraining(Task):
             elif "RedPajama" in tokeniser.name_or_path:
                 logger.debug("'RedPajama' tokeniser chosen, adding 178 to vocab size for logits processor.")
                 vocab_size += 178
+            elif "falcon" in tokeniser.name_or_path:
+                vocab_size = len(tokeniser)
 
             logits_processor.append(
                 InformedNERDecoderLogitsProcessor(
