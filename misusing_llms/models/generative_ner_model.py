@@ -52,7 +52,7 @@ class GenerativeNERModel(pl.LightningModule):
         else:
             self.model = AutoModelForCausalLM.from_pretrained(self.model_name, trust_remote_code=trust_remote_code)
 
-        if self.model.lm_head.out_features != len(tokeniser):
+        if "tiiuae/falcon" in self.model_name and self.model.lm_head.out_features != len(tokeniser):
             self.model.resize_token_embeddings(len(tokeniser))
 
         if self.lora:

@@ -35,11 +35,12 @@ class InformedNERDecoderLogitsProcessor(LogitsProcessor):
         #   - bigscience/bloom
         # Therefore, we add the token id for this to self.combine_token_ids
         self.combine_token_ids = self._tokenise_with_leading_space(text=self.combine_token)
-        if "bigscience/bloom" in self.tokeniser.name_or_path:
+        if len(self.tokeniser(". " + self.combine_token).input_ids) == 1:
             self.combine_token_ids.append(self.tokeniser(text=". " + self.combine_token).input_ids)
         # the same thing happens for the string " \n " when using the following tokenisers:
         #   - togethercomputer/RedPajama
-        elif "togethercomputer/RedPajama" in self.tokeniser.name_or_path:
+        #   - tiiuae/falcon
+        if len(self.tokeniser(" " + self.combine_token + " ").input_ids) == 1:
             self.combine_token_ids.append(self.tokeniser(text=" " + self.combine_token + " ").input_ids)
 
         self.entity_separator_token_ids = self._tokenise_with_leading_space(text=self.entity_separator_token)
@@ -115,7 +116,9 @@ class InformedNERDecoderLogitsProcessor(LogitsProcessor):
         """tokenises the str input, once without a leading space and once with leading space"""
         without_leading_space = self.tokeniser(text=text).input_ids
         with_leading_space = self.tokeniser(text=" " + text).input_ids
-        if with_leading_space == without_leading_space:
+        if with_leading_space == without_leading_space or (
+            without_leading_space in with_leading_space and len(with_leading_space) > 1
+        ):
             return [without_leading_space]
         else:
             return [without_leading_space, with_leading_space]
@@ -157,26 +160,6 @@ class InformedNERDecoderLogitsProcessor(LogitsProcessor):
             prompt_ids_with_leading_space[i] = self.tokeniser(" " + self.tokeniser.decode(prompt_ids[i])).input_ids
 
         return prompt_ids, prompt_ids_with_leading_space
-
-    # def _apply_rule4a(
-    #     self, scores: FloatTensor, prompt_ids: List[List[int]], batch_position: int, device: torch.device
-    # ) -> FloatTensor:
-    #     mask_rule4a = torch.ones(self.vocab_size, dtype=torch.bool, device=device)
-    #     mask_rule4a[prompt_ids[batch_position]] = False
-    #
-    #     # apply the mask
-    #     scores[batch_position].masked_fill_(mask=mask_rule4a, value=self.mask_value)
-    #
-    #     predicted_token_id = int(torch.argmax(scores[batch_position]))
-    #     predicted_token = self.tokeniser.decode(predicted_token_id)
-    #     if predicted_token in [",", ".", " .", " ,"]:
-    #         print("WHAT?! DEBUG HERE! line 170")
-    #
-    #     # save position of predicted token
-    #     self.rule4_memory[batch_position] = [
-    #         i for i, x in enumerate(prompt_ids[batch_position]) if x == predicted_token_id
-    #     ]
-    #     return scores
 
     def _get_remaining_text_left_for_generation(self, text: str, token: str) -> List[str]:
         """
@@ -315,40 +298,6 @@ class InformedNERDecoderLogitsProcessor(LogitsProcessor):
                             text=prompt_decoded, token=predicted_token_without_masking, batch_position=i
                         )
 
-                        # if predicted_token_id_without_masking in prompt_ids_with_leading_space[i]:
-                        #     # this should be the norm, as the prompt id should always be split the same, regardless of
-                        #     # leading space or not!
-                        #     self.rule4_memory[i] = [
-                        #         ii
-                        #         for ii, x in enumerate(prompt_ids_with_leading_space[i])
-                        #         if x == predicted_token_id_without_masking
-                        #     ]
-                        # else:
-                        #     # BUT, for whatever reason, we sometimes get very weird results from the tokeniser.
-                        #     # example: "Duran" is split into "D" "uran", whereas " Duran" is split into " Dur" "an"
-                        #     # Therefore, if predicted_token_id_without_masking is not in the prompt, this is very likely
-                        #     # the case.
-                        #     if predicted_token_id_without_masking != prompt_ids_with_leading_space[0]:
-                        #         logger.warning(
-                        #             f"Predicted token in prompt but not in prompt ids!\n"
-                        #             f"Predicted token: '{predicted_token_without_masking}'\n"
-                        #             f"Predicted token id: {predicted_token_id_without_masking}\n"
-                        #             f"Prompt: {prompt_decoded}\n"
-                        #             f"Prompt ids: {prompt_ids[i]}\n"
-                        #             f"Prompt with leading space: "
-                        #             f"{self.tokeniser.decode(prompt_ids_with_leading_space[i])}\n"
-                        #             f"Prompt with leading space ids: {prompt_ids_with_leading_space[i]}\n"
-                        #             f"Second best prediction: "
-                        #             f"'{self.tokeniser.decode(int(torch.topk(scores[i], k=2).indices[1]))}'"
-                        #         )
-                        #         scores = self._apply_rule4a(
-                        #             scores=scores,
-                        #             prompt_ids=prompt_ids_with_leading_space,
-                        #             batch_position=i,
-                        #             device=device,
-                        #         )
-                        #     else:
-                        #         self.rule4_edge_case_flag[i] = True
                     else:
                         mask_rule4a = torch.ones(self.vocab_size, dtype=torch.bool, device=device)
                         mask_rule4a[prompt_ids_with_leading_space[i]] = False
