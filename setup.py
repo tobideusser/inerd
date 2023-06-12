@@ -27,5 +27,6 @@ setup(
         "bitsandbytes",
         "accelerate",
         "peft",
+        "einops==0.6.1",
     ],
 )

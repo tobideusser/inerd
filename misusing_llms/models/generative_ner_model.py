@@ -9,8 +9,7 @@ import pytorch_lightning as pl
 import torch
 from peft import get_peft_model, LoraConfig, TaskType
 from torch.distributed.fsdp.wrap import wrap
-from transformers import AutoModelForCausalLM, PreTrainedTokenizerFast
-from deepspeed.ops.adam import DeepSpeedCPUAdam
+from transformers import AutoModelForCausalLM, PreTrainedTokenizerFast, LlamaForCausalLM
 from pytorch_lightning.utilities import rank_zero_only
 
 
@@ -50,9 +49,14 @@ class GenerativeNERModel(pl.LightningModule):
                 self.model_name, load_in_8bit=True, device_map="auto", trust_remote_code=trust_remote_code
             )
         else:
-            self.model = AutoModelForCausalLM.from_pretrained(self.model_name, trust_remote_code=trust_remote_code)
+            if model_params["llama"]:
+                self.model = LlamaForCausalLM.from_pretrained(self.model_name)
+            else:
+                self.model = AutoModelForCausalLM.from_pretrained(self.model_name, trust_remote_code=trust_remote_code)
 
-        if "tiiuae/falcon" in self.model_name and self.model.lm_head.out_features != len(tokeniser):
+        if ("tiiuae/falcon" in self.model_name or model_params["llama"]) and self.model.lm_head.out_features != len(
+            tokeniser
+        ):
             self.model.resize_token_embeddings(len(tokeniser))
 
         if self.lora:
@@ -105,7 +109,7 @@ class GenerativeNERModel(pl.LightningModule):
     #             f"{self.model.base_model_prefix} not implemented."
     #         )
 
-    def validation_step(self, batch: Dict, batch_idx: int) -> Dict:
+    def generate(self, batch: Dict) -> Dict:
         predictions = self.model.generate(
             input_ids=batch["prompt_ids"],
             attention_mask=(batch["prompt_ids"] != self.pad_token_id).type(torch.LongTensor).to(self.device),
@@ -115,11 +119,32 @@ class GenerativeNERModel(pl.LightningModule):
             **self.generation_params,
         )
         batch["predictions"] = predictions
-        batch["output_tokens"] = [self.tokeniser.convert_ids_to_tokens(p) for p in torch.unbind(predictions, dim=0)]
+        batch["output_tokens"] = [
+            self.tokeniser.convert_ids_to_tokens(p, skip_special_tokens=True) for p in torch.unbind(predictions, dim=0)
+        ]
         entity_string_token_ids_predicted = predictions[:, batch["max_length_prompt_ids"] :]
         batch["entity_string_predicted"] = self.tokeniser.batch_decode(entity_string_token_ids_predicted)
         batch = self._detach_tensors_in_dict(batch)
         return batch
+
+    def validation_step(self, batch: Dict, batch_idx: int) -> Dict:
+        return self.generate(batch=batch)
+        # predictions = self.model.generate(
+        #     input_ids=batch["prompt_ids"],
+        #     attention_mask=(batch["prompt_ids"] != self.pad_token_id).type(torch.LongTensor).to(self.device),
+        #     logits_processor=self.logits_processor,
+        #     synced_gpus=self.is_multigpu,
+        #     pad_token_id=self.tokeniser.eos_token_id,
+        #     **self.generation_params,
+        # )
+        # batch["predictions"] = predictions
+        # batch["output_tokens"] = [
+        #     self.tokeniser.convert_ids_to_tokens(p, skip_special_tokens=True) for p in torch.unbind(predictions, dim=0)
+        # ]
+        # entity_string_token_ids_predicted = predictions[:, batch["max_length_prompt_ids"] :]
+        # batch["entity_string_predicted"] = self.tokeniser.batch_decode(entity_string_token_ids_predicted)
+        # batch = self._detach_tensors_in_dict(batch)
+        # return batch
 
     def on_validation_batch_end(self, outputs, batch, batch_idx, dataloader_idx=0) -> None:
         # update stored results to evalaluate them at the end of the epoch
@@ -132,6 +157,17 @@ class GenerativeNERModel(pl.LightningModule):
         # compute and log metrics
         # metrics = self.evaluator.compute(reset=True)
         self.log_metrics(split="valid")
+
+    def test_step(self, batch: Dict, batch_idx: int) -> Dict:
+        return self.generate(batch=batch)
+
+    def on_test_batch_end(self, outputs, batch, batch_idx: int, dataloader_idx: int = 0) -> None:
+        self.ground_truth_entities.extend(outputs["ground_truth_entities"])
+        self.entity_strings_predicted.extend(outputs["entity_string_predicted"])
+        self.entity_strings_ground_truth.extend(outputs["entity_string"])
+
+    def on_test_epoch_end(self) -> None:
+        self.log_metrics(split="test")
 
     def training_step(self, batch: Dict, batch_idx: int) -> Dict:
         return self.forward(batch)

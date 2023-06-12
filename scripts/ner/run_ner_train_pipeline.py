@@ -8,7 +8,7 @@ from fluidml import Flow
 from fluidml.flow import TaskSpec
 
 from misusing_llms import project_path
-from misusing_llms.tasks import Parsing, Tokenisation, NERTraining
+from misusing_llms.tasks import Parsing, Tokenisation, NERTraining, NEREvaluation
 from misusing_llms.utils.fluid_helper import (
     configure_logging,
     MyLocalFileStore,
@@ -83,6 +83,8 @@ def main():
             config = yaml.safe_load(open(os.path.join(project_path, "scripts", "ner", "conll2003_config.yaml"), "r"))
         elif dataset == "bc5cdr":
             config = yaml.safe_load(open(os.path.join(project_path, "scripts", "ner", "bc5cdr_config.yaml"), "r"))
+        elif dataset == "ontonotes":
+            config = yaml.safe_load(open(os.path.join(project_path, "scripts", "ner", "ontonotes_config.yaml"), "r"))
         else:
             raise ValueError(f"Dataset {dataset} not known.")
 
@@ -115,6 +117,7 @@ def main():
     data_parsing_cfg = config["Parsing"]
     tokenisation_cfg = config["Tokenisation"]
     training_cfg = config["Training"]
+    evaluation_cfg = config["Evaluation"]
 
     # create all task specs
     parsing = TaskSpec(task=Parsing, config=data_parsing_cfg)
@@ -126,11 +129,17 @@ def main():
         expand=gs_expansion_method,
         # additional_kwargs=training_additional_kwargs,
     )
+    evaluation = TaskSpec(
+        task=NEREvaluation,
+        config=evaluation_cfg,
+        expand=gs_expansion_method,
+    )
 
     # dependencies between tasks
     tokenisation.requires(parsing)
     # preprocessing.requires(tokenisation)
     training.requires(tokenisation)
+    evaluation.requires(tokenisation, training)
 
     # list of all tasks
     tasks = [
@@ -138,6 +147,7 @@ def main():
         tokenisation,
         # preprocessing,
         training,
+        evaluation,
     ]
 
     # create list of resources

@@ -1,8 +1,9 @@
 import multiprocessing
+import operator
 import os
 import random
 import sys
-from typing import List, Optional, Union, Dict
+from typing import List, Optional, Union, Dict, Any
 
 import numpy as np
 import torch
@@ -16,6 +17,11 @@ _DEVICE: Optional[torch.device] = None
 # todo: remove unused helper functions!
 
 
+def rindex(lst: List, value: Any):
+    """returns the last occurence of value in lst"""
+    return len(lst) - operator.indexOf(reversed(lst), value) - 1
+
+
 def entity_string_to_entity_dataclass(entity_string: str) -> Union[List[Entity], List]:
     if ";" in entity_string:
         entity_blocks = entity_string.split(";")
@@ -24,9 +30,11 @@ def entity_string_to_entity_dataclass(entity_string: str) -> Union[List[Entity],
             if ":" in entity_block:
                 split = entity_block.split(":")
                 if len(split[0]) > 0 and len(split[1]) > 0:
-                    # if conditions remove leading space if it exists
-                    entity_type = split[0] if split[0][0] != " " else split[0][1:]
-                    entity_words = split[1] if split[1][0] != " " else split[1][1:]
+                    # remove leading and trailing space if it exists
+                    entity_type = split[0].strip()
+                    entity_words = split[1].strip()
+                    # entity_type = split[0] if split[0][0] != " " else split[0][1:]
+                    # entity_words = split[1] if split[1][0] != " " else split[1][1:]
                     entities.append(Entity(words=entity_words, type_=entity_type))
         return entities
     else:

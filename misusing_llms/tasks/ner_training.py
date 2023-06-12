@@ -14,7 +14,7 @@ from pytorch_lightning.callbacks import (
 from pytorch_lightning.loggers import TensorBoardLogger, WandbLogger, CSVLogger
 from pytorch_lightning.strategies import FSDPStrategy, DeepSpeedStrategy
 from torch.utils.data import DataLoader, Dataset
-from transformers import AutoTokenizer, LogitsProcessorList
+from transformers import AutoTokenizer, LogitsProcessorList, LlamaTokenizer
 from transformers.models.bloom.modeling_bloom import BloomBlock
 from transformers.models.opt.modeling_opt import OPTDecoderLayer
 
@@ -152,11 +152,18 @@ class NERTraining(Task):
     def _log_hyperparameter(self, loggers):
         # hardcoded which hyperparameter will be logged
         if not self.is_subprocess:
+            if self.model_params["llama"]:
+                if "7B" in self.model_params["model_name"]:
+                    model_name = "llama-7B"
+                else:
+                    model_name = "llama-?B"
+            else:
+                model_name = self.model_params["model_name"]
             hyperparameter_to_be_logged = {
                 "informed_generation": self.informed_generation,
                 "batch_size": self.training_params["data_loading"]["batch_size"],
                 "combine_train_valid": self.combine_train_valid,
-                "model_name": self.model_params["model_name"],
+                "model_name": model_name,
                 "n-bit precision": self.training_params["trainer"]["precision"],
                 "strategy": "fsdp" if len(self.resource.device) > 1 else "",
                 "num_gpus": len(self.resource.device),
@@ -164,9 +171,7 @@ class NERTraining(Task):
                 "lora": self.model_params["lora"],
             }
             for train_logger in loggers:
-                if isinstance(train_logger, pl.loggers.tensorboard.TensorBoardLogger):
-                    pass  # todo
-                elif isinstance(train_logger, pl.loggers.wandb.WandbLogger):
+                if isinstance(train_logger, pl.loggers.wandb.WandbLogger):
                     train_logger.experiment.config.update(hyperparameter_to_be_logged)
 
     def _init_model_callbacks(self) -> List:
@@ -225,11 +230,19 @@ class NERTraining(Task):
             or "opt" in self.model_params["model_name"]
             or "gpt-2" in self.model_params["model_name"]
             or "falcon" in self.model_params["model_name"]
+            or self.model_params["llama"]
         ):
             os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
-        tokeniser = AutoTokenizer.from_pretrained(self.model_params["model_name"])
-        if "RedPajama" in self.model_params["model_name"]:
+        if self.model_params["llama"]:
+            tokeniser = LlamaTokenizer.from_pretrained(self.model_params["model_name"])
+        else:
+            tokeniser = AutoTokenizer.from_pretrained(self.model_params["model_name"])
+
+        if self.model_params["llama"]:
+            tokeniser.add_special_tokens({"pad_token": "<|padding|>"})
+            pad_token_id = tokeniser.pad_token_id
+        elif "RedPajama" in self.model_params["model_name"]:
             pad_token_id = 1  # "<|padding|>" in GPT-NEOX
             tokeniser.pad_token_id = 1
         elif "falcon" in self.model_params["model_name"]:
@@ -269,7 +282,7 @@ class NERTraining(Task):
             elif "RedPajama" in tokeniser.name_or_path:
                 logger.debug("'RedPajama' tokeniser chosen, adding 178 to vocab size for logits processor.")
                 vocab_size += 178
-            elif "falcon" in tokeniser.name_or_path:
+            elif self.model_params["llama"] or "falcon" in tokeniser.name_or_path:
                 vocab_size = len(tokeniser)
 
             logits_processor.append(
@@ -281,6 +294,7 @@ class NERTraining(Task):
                     entity_separator_token=";",
                     type_content_separator_token=":",
                     batch_size=self.training_params["data_loading"]["batch_size"],
+                    leading_space=not self.model_params["llama"],
                 )
             )
         else:

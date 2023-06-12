@@ -42,6 +42,9 @@ Parsing:
 # "togethercomputer/RedPajama-INCITE-Base-3B-v1"
 # "togethercomputer/RedPajama-INCITE-Base-7B-v0.1"
 # "tiiuae/falcon-7b"
+# "bigscience/bloom-7b1"
+# "facebook/opt-6.7b"
+# llama: "/cluster/models/llama_weights/huggingface_converted/7B"
 
 
 # models fitting on two 32gb GPUs with fsdp and cpu offloading:
@@ -60,9 +63,10 @@ Parsing:
 # "togethercomputer/RedPajama-INCITE-Base-7B-v0.1"
 
 Tokenisation:
-  tokeniser_name: &modelname "tiiuae/falcon-7b"
+  tokeniser_name: &modelname "/cluster/models/llama_weights/huggingface_converted/7B"
+  llama: &llama true
   special_tokens: null
-  combine_token: "\n"
+  combine_token: "<s>"
   add_leading_space: false
 
 
@@ -79,6 +83,7 @@ Training:
 
     model_params:
       model_name: *modelname
+      llama: *llama
       load_in_8bit: false
       lora: true
       lora_config:
@@ -106,7 +111,7 @@ Training:
 
       trainer:
         max_epochs: 10
-        accumulate_grad_batches: 1 # [2, 4]  # 4
+        accumulate_grad_batches: 2 # [2, 4]  # 4
         gradient_clip_val: 1  # [1, 10]  # 10
         precision: 32
 #        precision: 16
@@ -127,7 +132,15 @@ Training:
 #          weights: null
 
       data_loading:
-        batch_size: 2
+        batch_size: 1
 #        drop_last: false
         combine_train_valid: false
         validate_on_test_set: false
+
+
+####################
+# Model Evaluation #
+####################
+
+Evaluation:
+  split: "validation"

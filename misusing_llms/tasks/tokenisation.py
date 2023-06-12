@@ -3,7 +3,7 @@ from typing import Dict, Optional, Union
 
 from fluidml import Task
 from tqdm import tqdm
-from transformers import AutoTokenizer
+from transformers import AutoTokenizer, LlamaTokenizer
 
 from misusing_llms.data_classes import NERCorpus
 from misusing_llms.utils.utils import set_seed_number, set_seeds
@@ -20,6 +20,7 @@ class Tokenisation(Task):
         tokeniser_name: Optional[str] = None,
         train_mode: bool = True,
         add_leading_space: bool = True,
+        llama: bool = False,
     ):
         super().__init__()
 
@@ -32,7 +33,10 @@ class Tokenisation(Task):
 
         self.train_mode = train_mode
 
-        self.tokeniser = AutoTokenizer.from_pretrained(self.tokeniser_name)
+        if llama:
+            self.tokeniser = LlamaTokenizer.from_pretrained(self.tokeniser_name)
+        else:
+            self.tokeniser = AutoTokenizer.from_pretrained(self.tokeniser_name)
 
     def _tokenise_corpus(self, corpus: NERCorpus) -> NERCorpus:
 
