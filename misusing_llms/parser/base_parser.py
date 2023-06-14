@@ -11,11 +11,21 @@ class BaseParser(ABC):
         "conll2003": "misusing_llms.parser.conll2003_huggingface_parser.CoNLL2003HuggingFaceParser",
         "CoNLL-2003": "misusing_llms.parser.conll2003_huggingface_parser.CoNLL2003HuggingFaceParser",
         "BC5CDR": "misusing_llms.parser.bc5cdr_parser.BC5CDRParser",
+        "OntoNotes": "misusing_llms.parser.ontonotes_huggingface_parser.OntoNotesHuggingFaceParser",
+        "NCBI-disease": "misusing_llms.parser.ncbi_disease_huggingface_parser.NCBIDiseaseHuggingFaceParser",
     }
 
-    def __init__(self, type_mapping: Optional[Dict] = None, debug_size: Optional[int] = None):
+    def __init__(
+        self,
+        entity_separator_token: str,
+        type_content_separator_token: str,
+        type_mapping: Optional[Dict] = None,
+        debug_size: Optional[int] = None,
+    ):
         self.type_mapping = type_mapping
         self.debug_size = debug_size
+        self.entity_separator_token = entity_separator_token
+        self.type_content_separator_token = type_content_separator_token
 
         self.entity_tag_to_label = None
         self._begin_tags = None
@@ -62,7 +72,7 @@ class BaseParser(ABC):
         raise NotImplementedError
 
     @classmethod
-    def load_parser(cls, type_: str, type_mapping: Optional[Dict] = None, *args, **kwargs) -> "BaseParser":
+    def load_parser(cls, type_: str, *args, **kwargs) -> "BaseParser":
         """function to load different parsers"""
         try:
             callable_path = cls.PARSER[type_]
@@ -75,4 +85,4 @@ class BaseParser(ABC):
         module = import_module(module_name)
         class_ = getattr(module, class_name)
         kwargs_filtered = {k: v for k, v in kwargs.items() if k in signature(class_).parameters}
-        return class_(type_mapping=type_mapping, *args, **kwargs_filtered)
+        return class_(*args, **kwargs_filtered)

@@ -1,4 +1,4 @@
-from typing import Optional, Dict
+from typing import Optional
 
 from datasets import load_dataset, DatasetDict
 from tqdm import tqdm

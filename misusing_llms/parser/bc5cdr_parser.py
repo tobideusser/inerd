@@ -10,14 +10,20 @@ class BC5CDRParser(BaseParser):
     def __init__(
         self,
         path_to_data_folders: str,
+        entity_separator_token: str,
+        type_content_separator_token: str,
         train_file_name: str = "CDR_TrainingSet.BioC.xml",
         valid_file_name: str = "CDR_DevelopmentSet.BioC.xml",
         test_file_name: str = "CDR_TestSet.BioC.xml",
-        type_mapping: Optional[Dict] = None,
         debug_size: Optional[int] = None,
         dataset_name: Optional[str] = None,
     ):
-        super().__init__(type_mapping=type_mapping, debug_size=debug_size)
+        super().__init__(
+            type_mapping=None,
+            debug_size=debug_size,
+            entity_separator_token=entity_separator_token,
+            type_content_separator_token=type_content_separator_token,
+        )
         self.dataset_name = dataset_name if dataset_name else "BC5CDR"
         self.file_paths = {
             "train": os.path.join(path_to_data_folders, train_file_name),
@@ -59,7 +65,15 @@ class BC5CDRParser(BaseParser):
                                 end=offset + length,
                             )
                         )
-                    data.append(Sentence(text=text, id_=document_id + "-" + str(ii), entities_anno=entities))
+                    data.append(
+                        Sentence(
+                            text=text,
+                            id_=document_id + "-" + str(ii),
+                            entities_anno=entities,
+                            entity_separator_token=self.entity_separator_token,
+                            type_content_separator_token=self.type_content_separator_token,
+                        )
+                    )
                     i += 1
                     if self.debug_size and i >= self.debug_size:
                         return data

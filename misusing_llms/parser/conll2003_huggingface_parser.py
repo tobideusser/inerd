@@ -9,9 +9,23 @@ from misusing_llms.parser import BaseParser
 
 class CoNLL2003HuggingFaceParser(BaseParser):
     def __init__(
-        self, type_mapping: Optional[Dict] = None, debug_size: Optional[int] = None, dataset_name: Optional[str] = None
+        self,
+        entity_separator_token: str,
+        type_content_separator_token: str,
+        type_mapping: bool = True,
+        debug_size: Optional[int] = None,
+        dataset_name: Optional[str] = None,
     ):
-        super().__init__(type_mapping=type_mapping, debug_size=debug_size)
+        if type_mapping:
+            type_mapping = {"PER": "Person", "LOC": "Location", "ORG": "Organisation", "MISC": "Miscellaneous"}
+        else:
+            type_mapping = None
+        super().__init__(
+            type_mapping=type_mapping,
+            debug_size=debug_size,
+            entity_separator_token=entity_separator_token,
+            type_content_separator_token=type_content_separator_token,
+        )
         self.dataset_name = dataset_name if dataset_name else "CoNLL2003"
 
     def parse(self) -> NERCorpus:
@@ -48,6 +62,8 @@ class CoNLL2003HuggingFaceParser(BaseParser):
                         entity_tags=sentence["ner_tags"],
                         entity_label=[self.entity_tag_to_label[entity_tag] for entity_tag in sentence["ner_tags"]],
                         entities_anno=entities,
+                        entity_separator_token=self.entity_separator_token,
+                        type_content_separator_token=self.type_content_separator_token,
                     )
                 )
                 if self.debug_size and i >= self.debug_size - 1:
@@ -60,10 +76,3 @@ class CoNLL2003HuggingFaceParser(BaseParser):
             entity_tag_to_label=self.entity_tag_to_label,
         )
         return corpus_parsed
-
-
-# debug
-if __name__ == "__main__":
-    parser = CoNLL2003HuggingFaceParser(debug_size=100)
-    c = parser.parse()
-    pass
