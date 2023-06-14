@@ -13,6 +13,7 @@ class BaseParser(ABC):
         "BC5CDR": "misusing_llms.parser.bc5cdr_parser.BC5CDRParser",
         "OntoNotes": "misusing_llms.parser.ontonotes_huggingface_parser.OntoNotesHuggingFaceParser",
         "NCBI-disease": "misusing_llms.parser.ncbi_disease_huggingface_parser.NCBIDiseaseHuggingFaceParser",
+        "WNUT-17": "misusing_llms.parser.wnut17_huggingface_parser.WNUT17HuggingFaceParser",
     }
 
     def __init__(
