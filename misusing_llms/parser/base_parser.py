@@ -14,6 +14,7 @@ class BaseParser(ABC):
         "OntoNotes": "misusing_llms.parser.ontonotes_huggingface_parser.OntoNotesHuggingFaceParser",
         "NCBI-disease": "misusing_llms.parser.ncbi_disease_huggingface_parser.NCBIDiseaseHuggingFaceParser",
         "WNUT-17": "misusing_llms.parser.wnut17_huggingface_parser.WNUT17HuggingFaceParser",
+        "JNLPBA": "misusing_llms.parser.jnlpba_huggingface_parser.JNLPBAHuggingFaceParser",
     }
 
     def __init__(
