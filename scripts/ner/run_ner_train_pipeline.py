@@ -8,7 +8,7 @@ from fluidml import Flow
 from fluidml.flow import TaskSpec
 
 from misusing_llms import project_path
-from misusing_llms.tasks import Parsing, Tokenisation, NERTraining, NEREvaluation
+from misusing_llms.tasks import Parsing, Tokenisation, NERTraining, NEREvaluation, NERPreTraining
 from misusing_llms.utils.fluid_helper import (
     configure_logging,
     MyLocalFileStore,
@@ -47,6 +47,8 @@ def parse_args() -> argparse.Namespace:
         type=int,
         help="How to group multiple GPU's, e.g. `--cuda-group 2` groups in pair of twos",
     )
+    parser.add_argument("--deepspeed", action="store_true", help="Use deepspeed.")
+    parser.add_argument("--fsdp", action="store_true", help="Use fsdp.")
     parser.add_argument("--use-cuda", action="store_true", help="Use cuda.")
     parser.add_argument("--max-split-size", type=int, default=None, help="Max. split size for cuda processes.")
     parser.add_argument("--warm-start", action="store_true", help="Tries to warm start training.")
@@ -99,7 +101,16 @@ def main():
     warm_start = args.warm_start  # False  # continue training from an existing checkpoint
     gs_expansion_method: str = args.gs_expansion_method
     run_name = "debug" if is_debug() else args.run_name
-    project_name = args.project_name if args.dataset is None else args.project_name + "-" + args.dataset
+    project_name = args.project_name  # if args.dataset is None else args.project_name + "-" + args.dataset
+    deepspeed = args.deepspeed
+    fsdp = args.fsdp
+    gpu_scaling = "auto"
+    if deepspeed and fsdp:
+        raise AssertionError("Two systems for gpu scaling specified (deepspeed and fsdp). Aborting.")
+    elif deepspeed:
+        gpu_scaling = "deepspeed"
+    elif fsdp:
+        gpu_scaling = "fsdp"
 
     # fixes pytorch memory leak
     # if use_cuda:
@@ -116,38 +127,35 @@ def main():
     # get task configs
     data_parsing_cfg = config["Parsing"]
     tokenisation_cfg = config["Tokenisation"]
+    pre_training_cfg = config["PreTraining"]
     training_cfg = config["Training"]
     evaluation_cfg = config["Evaluation"]
 
     # create all task specs
     parsing = TaskSpec(task=Parsing, config=data_parsing_cfg)
     tokenisation = TaskSpec(task=Tokenisation, config=tokenisation_cfg)
-    # preprocessing = TaskSpec(task=Preprocessing, config=preprocessing_cfg)
-    training = TaskSpec(
-        task=NERTraining,
-        config=training_cfg,
+    pre_training = TaskSpec(
+        task=NERPreTraining,
+        config=pre_training_cfg,
         expand=gs_expansion_method,
-        # additional_kwargs=training_additional_kwargs,
+        additional_kwargs={"gpu_scaling": gpu_scaling},
     )
-    evaluation = TaskSpec(
-        task=NEREvaluation,
-        config=evaluation_cfg,
-        expand=gs_expansion_method,
-    )
+    training = TaskSpec(task=NERTraining, config=training_cfg, expand=gs_expansion_method)
+    evaluation = TaskSpec(task=NEREvaluation, config=evaluation_cfg, expand=gs_expansion_method)
 
     # dependencies between tasks
     tokenisation.requires(parsing)
-    # preprocessing.requires(tokenisation)
-    training.requires(tokenisation)
+    pre_training.requires(tokenisation)
+    training.requires(pre_training, tokenisation)
     evaluation.requires(tokenisation, training)
 
     # list of all tasks
     tasks = [
         parsing,
         tokenisation,
-        # preprocessing,
-        training,
-        evaluation,
+        pre_training,
+        # training,
+        # evaluation,
     ]
 
     # create list of resources

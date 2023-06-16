@@ -51,6 +51,13 @@ class Entity:
 @dataclass
 class Sentence:
     id_: Union[int, str]
+
+    entity_separator_token: str
+    type_content_separator_token: str
+
+    _entity_separator: Optional[str] = None
+    _type_content_separator: Optional[str] = None
+
     entity_tags: Optional[List[int]] = None
     words: Optional[List[str]] = None
     entity_label: Optional[List[str]] = None
@@ -80,6 +87,24 @@ class Sentence:
         return len(self.words)
 
     @property
+    def entity_separator(self) -> str:
+        if self._entity_separator is None:
+            if len(self.entity_separator_token) == 1 and not self.entity_separator_token.isalnum():
+                self._entity_separator = self.entity_separator_token + " "
+            else:
+                self._entity_separator = " " + self.entity_separator_token + " "
+        return self._entity_separator
+
+    @property
+    def type_content_separator(self) -> str:
+        if self._type_content_separator is None:
+            if len(self.type_content_separator_token) == 1 and not self.type_content_separator_token.isalnum():
+                self._type_content_separator = self.type_content_separator_token + " "
+            else:
+                self._type_content_separator = " " + self.type_content_separator_token + " "
+        return self._type_content_separator
+
+    @property
     def content(self) -> str:
         if self.text:
             return self.text
@@ -93,9 +118,9 @@ class Sentence:
             s = ""
             for entity in self.entities_anno:
                 if isinstance(entity.words, str):
-                    s += entity.type_ + ": " + entity.words + "; "
+                    s += entity.type_ + self.type_content_separator + entity.words + self.entity_separator
                 else:
-                    s += entity.type_ + ": " + " ".join(entity.words) + "; "
+                    s += entity.type_ + self.type_content_separator + " ".join(entity.words) + self.entity_separator
 
             if len(s) > 0:
                 s = s[:-1]

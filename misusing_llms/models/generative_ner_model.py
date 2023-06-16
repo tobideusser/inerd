@@ -7,7 +7,8 @@ import pandas as pd
 import numpy as np
 import pytorch_lightning as pl
 import torch
-from peft import get_peft_model, LoraConfig, TaskType
+from deepspeed.ops.adam import DeepSpeedCPUAdam
+from peft import get_peft_model, LoraConfig, TaskType, PeftModelForCausalLM
 from torch.distributed.fsdp.wrap import wrap
 from transformers import AutoModelForCausalLM, PreTrainedTokenizerFast, LlamaForCausalLM
 from pytorch_lightning.utilities import rank_zero_only
@@ -97,7 +98,36 @@ class GenerativeNERModel(pl.LightningModule):
         self.best_epoch = 0
 
     # def configure_sharded_model(self) -> None:
-    #     if self.model.base_model_prefix == "gpt_neox":  # redpajama model
+    #     if isinstance(self.model, PeftModelForCausalLM):
+    #         raise AssertionError(
+    #             "No memory efficiency gains with lora & fsdp. See https://github.com/pytorch/pytorch/issues/91165"
+    #         )
+    #         # if isinstance(self.model.base_model.model, LlamaForCausalLM):
+    #         #     self.model.base_model.model.base_model.embed_tokens = wrap(
+    #         #         self.model.base_model.model.base_model.embed_tokens
+    #         #     )
+    #         #     for i, layer in enumerate(self.model.base_model.model.base_model.layers):
+    #         #         self.model.base_model.model.base_model.layers[i].input_layernorm = wrap(layer.input_layernorm)
+    #         #         self.model.base_model.model.base_model.layers[i].mlp = wrap(layer.mlp)
+    #         #         self.model.base_model.model.base_model.layers[i].post_attention_layernorm = wrap(
+    #         #             layer.post_attention_layernorm
+    #         #         )
+    #         #         # self.model.base_model.model.base_model.layers[i].self_attn = wrap(layer.self_attn)
+    #         #         self.model.base_model.model.base_model.layers[i].self_attn.k_proj = wrap(layer.self_attn.k_proj)
+    #         #         self.model.base_model.model.base_model.layers[i].self_attn.o_proj = wrap(layer.self_attn.o_proj)
+    #         #         self.model.base_model.model.base_model.layers[i].self_attn.q_proj = wrap(layer.self_attn.q_proj)
+    #         #         self.model.base_model.model.base_model.layers[i].self_attn.v_proj = wrap(layer.self_attn.v_proj)
+    #         #         self.model.base_model.model.base_model.layers[i].self_attn.rotary_emb = wrap(
+    #         #             layer.self_attn.rotary_emb
+    #         #         )
+    #         #     self.model.base_model.model.lm_head = wrap(self.model.base_model.model.lm_head)
+    #     elif isinstance(self.model, LlamaForCausalLM):
+    #         self.model.base_model.embed_tokens = wrap(self.model.base_model.embed_tokens)
+    #         for i, layer in enumerate(self.model.base_model.layers):
+    #             self.model.base_model.layers[i] = wrap(layer)
+    #         self.model.lm_head = wrap(self.model.lm_head)
+    #
+    #     elif self.model.base_model_prefix == "gpt_neox":  # redpajama model
     #         self.model.gpt_neox.embed_in = wrap(self.model.gpt_neox.embed_in)
     #         for i, layer in enumerate(self.model.gpt_neox.layers):
     #             self.model.gpt_neox.layers[i] = wrap(layer)
@@ -174,8 +204,8 @@ class GenerativeNERModel(pl.LightningModule):
 
     def forward(self, batch) -> Dict:
         # return self.model(input_ids=batch["input_ids"], labels=batch.get("labels", None))
-        labels = batch.get("labels", None)
-        model_output = self.model(input_ids=batch["input_ids"], labels=labels)
+        # labels = batch.get("labels", None)
+        model_output = self.model(input_ids=batch["input_ids"], labels=batch.get("labels", None))
 
         loss = float(model_output.loss)
         self.log(
@@ -205,7 +235,7 @@ class GenerativeNERModel(pl.LightningModule):
                 value=self.best_epoch,
                 sync_dist=self.is_multigpu,
             )
-            self._log_predictions()
+            self._log_predictions(split)
         for k, v in metrics.items():
             if isinstance(v, dict):
                 # self._log_summary_dict(name=split + "-" + k, summary_dict=v)
@@ -219,7 +249,7 @@ class GenerativeNERModel(pl.LightningModule):
         self._reset_predictions()
 
     @rank_zero_only
-    def _log_predictions(self):
+    def _log_predictions(self, split: str):
         table = pd.DataFrame(
             {
                 "ground_truth": self.entity_strings_ground_truth,
@@ -230,7 +260,7 @@ class GenerativeNERModel(pl.LightningModule):
             # if isinstance(train_logger, pl.loggers.tensorboard.TensorBoardLogger):
             #     train_logger.experiment.add_text(name, table.to_string(), global_step=self.current_epoch)
             if isinstance(train_logger, pl.loggers.wandb.WandbLogger):
-                train_logger.log_text(key="val_predictions", dataframe=table, step=self.global_step)
+                train_logger.log_text(key=split + "_predictions", dataframe=table, step=self.global_step)
             else:
                 logger.warning(f"pl.Trainer.logger of type {type(train_logger)} can not store text.")
 
@@ -374,3 +404,52 @@ class GenerativeNERModel(pl.LightningModule):
             return [optimiser], [scheduler]
         else:
             return optimiser
+
+
+class GenerativeNERModelFSDP(GenerativeNERModel):
+    def configure_sharded_model(self) -> None:
+        if isinstance(self.model, PeftModelForCausalLM):
+            raise AssertionError(
+                "No memory efficiency gains with lora & fsdp. See https://github.com/pytorch/pytorch/issues/91165"
+            )
+            # if isinstance(self.model.base_model.model, LlamaForCausalLM):
+            #     self.model.base_model.model.base_model.embed_tokens = wrap(
+            #         self.model.base_model.model.base_model.embed_tokens
+            #     )
+            #     for i, layer in enumerate(self.model.base_model.model.base_model.layers):
+            #         self.model.base_model.model.base_model.layers[i].input_layernorm = wrap(layer.input_layernorm)
+            #         self.model.base_model.model.base_model.layers[i].mlp = wrap(layer.mlp)
+            #         self.model.base_model.model.base_model.layers[i].post_attention_layernorm = wrap(
+            #             layer.post_attention_layernorm
+            #         )
+            #         # self.model.base_model.model.base_model.layers[i].self_attn = wrap(layer.self_attn)
+            #         self.model.base_model.model.base_model.layers[i].self_attn.k_proj = wrap(layer.self_attn.k_proj)
+            #         self.model.base_model.model.base_model.layers[i].self_attn.o_proj = wrap(layer.self_attn.o_proj)
+            #         self.model.base_model.model.base_model.layers[i].self_attn.q_proj = wrap(layer.self_attn.q_proj)
+            #         self.model.base_model.model.base_model.layers[i].self_attn.v_proj = wrap(layer.self_attn.v_proj)
+            #         self.model.base_model.model.base_model.layers[i].self_attn.rotary_emb = wrap(
+            #             layer.self_attn.rotary_emb
+            #         )
+            #     self.model.base_model.model.lm_head = wrap(self.model.base_model.model.lm_head)
+        elif isinstance(self.model, LlamaForCausalLM):
+            self.model.base_model.embed_tokens = wrap(self.model.base_model.embed_tokens)
+            for i, layer in enumerate(self.model.base_model.layers):
+                self.model.base_model.layers[i] = wrap(layer)
+            self.model.lm_head = wrap(self.model.lm_head)
+
+        elif self.model.base_model_prefix == "gpt_neox":  # redpajama model
+            self.model.gpt_neox.embed_in = wrap(self.model.gpt_neox.embed_in)
+            for i, layer in enumerate(self.model.gpt_neox.layers):
+                self.model.gpt_neox.layers[i] = wrap(layer)
+            self.model.gpt_neox.final_layer_norm = wrap(self.model.gpt_neox.final_layer_norm)
+            self.model.embed_out = wrap(self.model.embed_out)
+        else:
+            raise NotImplementedError(
+                f"manual wrapping for model_name: {self.model_name} and base_model_prefix: "
+                f"{self.model.base_model_prefix} not implemented."
+            )
+
+
+class GenerativeNERModelDeepSpeed(GenerativeNERModel):
+    def configure_optimizers(self):
+        return DeepSpeedCPUAdam(self.parameters())

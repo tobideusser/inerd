@@ -1,5 +1,5 @@
 import logging
-from typing import Dict, Optional, Union
+from typing import Dict, Optional, Union, List
 
 from fluidml import Task
 from tqdm import tqdm
@@ -55,21 +55,45 @@ class Tokenisation(Task):
 
         return corpus
 
-    def run(self, corpus_parsed: Union[Dict, NERCorpus]):
+    def run(self, corpus_parsed: Union[Dict, NERCorpus, List]):
         set_seed_number(self.seed)
         set_seeds()
+        self.unique_config["Parsing"].get("combine_token", "\n")
 
         if isinstance(corpus_parsed, Dict):
-            logger.info("Converting corpus_parsed dict to Corpus object.")
+            logger.info("Converting corpus_parsed dict to NERCorpus object.")
             corpus = NERCorpus.from_dict(corpus_parsed)
+            entity_separator_token = corpus[0].entity_separator_token
+            type_content_separator_token = corpus[0].type_content_separator_token
+        elif isinstance(corpus_parsed, list):
+            logger.info("Converting corpus_parsed list of dict to list of NERCorpus object.")
+            corpus = [NERCorpus.from_dict(c) for c in corpus_parsed]
+            entity_separator_token = corpus[0][0].entity_separator_token
+            type_content_separator_token = corpus[0][0].type_content_separator_token
         else:
             corpus = corpus_parsed
+            entity_separator_token = corpus[0].entity_separator_token
+            type_content_separator_token = corpus[0].type_content_separator_token
+
+        self.tokeniser.add_special_tokens(
+            {
+                "additional_special_tokens": [entity_separator_token, type_content_separator_token],
+            }
+        )
 
         logger.info("Tokenise corpus...")
-        corpus_tokenised = self._tokenise_corpus(corpus)
+        if isinstance(corpus, list):
+            corpus_tokenised = []
+            for c in corpus:
+                logger.info(f"Tokenising {c.name}")
+                corpus_tokenised.append(self._tokenise_corpus(c))
+        else:
+            corpus_tokenised = self._tokenise_corpus(corpus)
 
         if self.train_mode:
-            self.save(corpus_tokenised.to_dict(), "corpus_tokenised", type_="pickle")
-            # self.save(self.tokeniser, "tokeniser", type_="tokeniser")
+            if isinstance(corpus, list):
+                self.save([c.to_dict() for c in corpus], "corpus_tokenised", type_="pickle")
+            else:
+                self.save(corpus.to_dict(), "corpus_tokenised", type_="pickle")
         else:
-            return corpus_tokenised  # , self.tokeniser
+            return corpus_tokenised, self.tokeniser
