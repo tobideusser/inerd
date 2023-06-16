@@ -16,6 +16,7 @@ class BaseParser(ABC):
         "WNUT-17": "misusing_llms.parser.wnut17_huggingface_parser.WNUT17HuggingFaceParser",
         "JNLPBA": "misusing_llms.parser.jnlpba_huggingface_parser.JNLPBAHuggingFaceParser",
         "Few-NERD": "misusing_llms.parser.few_nerd_huggingface_parser.FewNERDHuggingFaceParser",
+        "CoNLL++": "misusing_llms.parser.conllpp_huggingface_parser.CoNLLPlusPlusHuggingFaceParser",
     }
 
     def __init__(
