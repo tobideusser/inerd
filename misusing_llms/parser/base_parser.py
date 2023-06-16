@@ -15,6 +15,7 @@ class BaseParser(ABC):
         "NCBI-disease": "misusing_llms.parser.ncbi_disease_huggingface_parser.NCBIDiseaseHuggingFaceParser",
         "WNUT-17": "misusing_llms.parser.wnut17_huggingface_parser.WNUT17HuggingFaceParser",
         "JNLPBA": "misusing_llms.parser.jnlpba_huggingface_parser.JNLPBAHuggingFaceParser",
+        "Few-NERD": "misusing_llms.parser.few_nerd_huggingface_parser.FewNERDHuggingFaceParser",
     }
 
     def __init__(
@@ -31,6 +32,7 @@ class BaseParser(ABC):
 
         self.entity_tag_to_label = None
         self._begin_tags = None
+        self._outside_tag_id = None
 
     @property
     def begin_tags(self) -> List[int]:
@@ -41,31 +43,70 @@ class BaseParser(ABC):
                     self._begin_tags.append(k)
         return self._begin_tags
 
-    def _entity_tags_to_entity_dict(self, entity_tags: List, words: List) -> List[Entity]:
+    @property
+    def outside_tag_id(self) -> int:
+        if self._outside_tag_id is None:
+            for k, v in self.entity_tag_to_label.items():
+                if v == "O" or v == "o":
+                    self._outside_tag_id = k
+                    break
+        return self._outside_tag_id
+
+    def _entity_tags_to_entity_dict(self, entity_tags: List, words: List, tagging_type="iob") -> List[Entity]:
         entity_found_flag = False
         entities = []
-        for i, entity_tag in enumerate(entity_tags):
-            if entity_tag in self.begin_tags and not entity_found_flag:
-                entity = Entity(start=i, words=[words[i]], type_=self.entity_tag_to_label[entity_tag].split("-")[1])
-                entity_found_flag = True
-            elif entity_found_flag:
-                if entity_tag not in self.begin_tags:
-                    try:
-                        type_ = self.entity_tag_to_label[entity_tag].split("-")[1]
-                        if type_ == entity.type_:
-                            entity.words.append(words[i])
-                        else:
-                            raise Exception
-                    except IndexError:
+
+        if tagging_type == "iob":
+
+            for i, entity_tag in enumerate(entity_tags):
+                if entity_tag in self.begin_tags and not entity_found_flag:
+                    entity = Entity(start=i, words=[words[i]], type_=self.entity_tag_to_label[entity_tag].split("-")[1])
+                    entity_found_flag = True
+                elif entity_found_flag:
+                    if entity_tag not in self.begin_tags:
+                        try:
+                            type_ = self.entity_tag_to_label[entity_tag].split("-")[1]
+                            if type_ == entity.type_:
+                                entity.words.append(words[i])
+                            else:
+                                raise Exception
+                        except IndexError:
+                            entity.end = i
+                            entities.append(entity)
+                            entity_found_flag = False
+                    else:
                         entity.end = i
                         entities.append(entity)
-                        entity_found_flag = False
-                else:
+                        entity = Entity(
+                            start=i, words=[words[i]], type_=self.entity_tag_to_label[entity_tag].split("-")[1]
+                        )
+                if (i + 1) == len(entity_tags) and entity_found_flag:
+                    entities.append(entity)
+
+        elif tagging_type == "simple":
+
+            for i, entity_tag in enumerate(entity_tags):
+                if entity_tag != self.outside_tag_id:
+                    if not entity_found_flag:
+                        entity = Entity(start=i, words=[words[i]], type_=self.entity_tag_to_label[entity_tag])
+                        entity_found_flag = True
+                    else:
+                        if self.entity_tag_to_label[entity_tag] == entity.type_:
+                            entity.words.append(words[i])
+                        else:
+                            entity.end = i
+                            entities.append(entity)
+                            entity = Entity(start=i, words=[words[i]], type_=self.entity_tag_to_label[entity_tag])
+                elif entity_found_flag:
                     entity.end = i
                     entities.append(entity)
-                    entity = Entity(start=i, words=[words[i]], type_=self.entity_tag_to_label[entity_tag].split("-")[1])
-            if (i + 1) == len(entity_tags) and entity_found_flag:
-                entities.append(entity)
+                    entity_found_flag = False
+
+                if (i + 1) == len(entity_tags) and entity_found_flag:
+                    entities.append(entity)
+
+        else:
+            raise NotImplementedError(f"tagging_type '{tagging_type}' not implemented.")
 
         return entities
 
