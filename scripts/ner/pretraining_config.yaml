@@ -1,0 +1,213 @@
+# Base directory to store all task outputs
+#base_dir: "/cluster/data/experiments/misusing_llms/conll2003_v1"
+#base_dir: "/scratch/data/misusing_llms/conll2003_dev"
+#base_dir: "/cluster/data/experiments/misusing_llms/conll2003_fsdp"
+#base_dir: "/cluster/data/experiments/misusing_llms/conll2003_debug"
+#base_dir: "/cluster/data/experiments/misusing_llms/conll2003_singlegpu"
+#base_dir: "/cluster/data/experiments/misusing_llms/conll2003_v2"
+base_dir: "/cluster/data/experiments/misusing_llms/pretraining"
+seed: &seed 3141
+
+###########
+# Parsing #
+###########
+
+Parsing:
+  dataset:
+#    Species-800: null  # google drive down for this file?
+    FiNER-ORD: null
+    CoNLL++: null
+    Few-NERD: null
+    JNLPBA: null
+    WNUT-17: null
+#    CoNLL-2003: null
+#      BC5CDR: "/cluster/data/ner/bc5cdr"
+    OntoNotes: null
+    NCBI-disease: null
+#  dataset_name: "CoNLL-2003"
+  debug_size: 12
+  type_mapping: true
+  entity_separator_token: "<ES>"
+  type_content_separator_token: "<TCS>"
+
+################
+# Tokenisation #
+################
+
+# models too large for one 32gb GPU:
+# "bigscience/bloom-1b7"
+# "facebook/opt-2.7b"
+
+# models fitting on one 32gb GPU:
+# "facebook/opt-1.3b"
+# "bigscience/bloom-1b1"
+# "EleutherAI/gpt-neo-1.3B"
+# "bigscience/bloom-560m"
+# "facebook/opt-125m"
+
+# models fitting on one 32gb GPU with LORA:
+# "togethercomputer/RedPajama-INCITE-Base-3B-v1"
+# "togethercomputer/RedPajama-INCITE-Base-7B-v0.1"
+# "tiiuae/falcon-7b"
+# "bigscience/bloom-7b1"
+# "facebook/opt-6.7b"
+# llama: "/cluster/models/llama_weights/huggingface_converted/7B"
+
+
+# models fitting on two 32gb GPUs with fsdp and cpu offloading:
+# "bigscience/bloom-1b7"
+# "gpt2-xl"
+
+# models not fitting on four 32gb GPUs with fsdp and cpu offloading:
+# "bigscience/bloom-3b"
+# "togethercomputer/RedPajama-INCITE-Base-3B-v1"
+# "facebook/opt-2.7b"
+
+# models fitting on four 32gb GPUs with fsdp, cpu offloading, and manual wrapping:
+# "togethercomputer/RedPajama-INCITE-Base-3B-v1"
+
+# models fitting on eight 32gb GPUs with fsdp, cpu offloading, and manual wrapping:
+# "togethercomputer/RedPajama-INCITE-Base-7B-v0.1"
+
+Tokenisation:
+  tokeniser_name: &modelname "/cluster/models/llama_weights/huggingface_converted/7B"
+  llama: &llama true
+  special_tokens: null
+  combine_token: "<s>"
+  add_leading_space: false
+
+################
+# Pre Training #
+################
+
+PreTraining:
+
+  - seed: *seed
+
+    wandb_logging: true
+    csv_logging: true
+
+    model_params:
+      model_name: *modelname
+      llama: *llama
+      load_in_8bit: false
+      lora: false
+      lora_config:
+        r: 8
+        lora_alpha: 32
+        lora_dropout: 0.1
+        fan_in_fan_out: false
+
+    generation_params:
+      informed_generation: false
+      num_beams: 1
+      do_sample: false
+      max_new_tokens: 100
+
+    training_params:
+      optimiser:
+        type_: 'adamW'
+        lr: 1.e-5
+        weight_decay: 0.01
+
+#      lr_scheduler:
+#        type_: 'lin_warmup'
+#        interval: 'step'
+#        lr_warmup: 0.1
+
+      trainer:
+        max_epochs: 3
+        accumulate_grad_batches: 4 # [2, 4]  # 4
+        gradient_clip_val: 1  # [1, 10]  # 10
+        precision: 32
+#        precision: 16
+        val_check_interval: 1. # 0.25  # 1.
+
+      callbacks:
+        monitor_var: 'valid-ner_micro_f1'
+        monitor_var_mode: 'max'
+        apply_early_stopping: false
+        patience: null
+        save_top_k: 1
+
+      data_loading:
+        batch_size: 1
+#        drop_last: false
+        combine_train_valid: false
+        validate_on_test_set: false
+
+
+##################
+# Model Training #
+##################
+
+Training:
+
+  - seed: *seed
+
+    wandb_logging: true
+    csv_logging: true
+
+    model_params:
+      model_name: *modelname
+      llama: *llama
+      load_in_8bit: false
+      lora: true
+      lora_config:
+        r: 8
+        lora_alpha: 32
+        lora_dropout: 0.1
+        fan_in_fan_out: false
+
+    generation_params:
+      informed_generation: false
+      num_beams: 1
+      do_sample: false
+      max_new_tokens: 100
+
+    training_params:
+      optimiser:
+        type_: 'adamW'
+        lr: 1.e-5
+        weight_decay: 0.01
+
+#      lr_scheduler:
+#        type_: 'lin_warmup'
+#        interval: 'step'
+#        lr_warmup: 0.1
+
+      trainer:
+        max_epochs: 3
+        accumulate_grad_batches: 8 # [2, 4]  # 4
+        gradient_clip_val: 1  # [1, 10]  # 10
+        precision: 32
+#        precision: 16
+        val_check_interval: 1. # 0.25  # 1.
+
+      callbacks:
+        monitor_var: 'valid-ner_micro_f1'
+        monitor_var_mode: 'max'
+        apply_early_stopping: false
+        patience: null
+        save_top_k: 1
+
+      metrics:
+        nerf1: null
+#        bleu:
+#          n_gram: 4
+#          smooth: false
+#          weights: null
+
+      data_loading:
+        batch_size: 1
+#        drop_last: false
+        combine_train_valid: true
+        validate_on_test_set: true
+
+
+####################
+# Model Evaluation #
+####################
+
+Evaluation:
+  split: "test"

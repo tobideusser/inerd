@@ -49,6 +49,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--deepspeed", action="store_true", help="Use deepspeed.")
     parser.add_argument("--fsdp", action="store_true", help="Use fsdp.")
+    parser.add_argument("--pre-training", action="store_true", help="Execute only pre-training.")
     parser.add_argument("--use-cuda", action="store_true", help="Use cuda.")
     parser.add_argument("--max-split-size", type=int, default=None, help="Max. split size for cuda processes.")
     parser.add_argument("--warm-start", action="store_true", help="Tries to warm start training.")
@@ -77,11 +78,15 @@ def parse_args() -> argparse.Namespace:
 def main():
     args = parse_args()
 
+    do_pre_training = args.pre_training
+
     if args.config:
         config = yaml.safe_load(open(args.config, "r"))
     else:
         dataset = args.dataset
-        if dataset == "conll2003":
+        if do_pre_training:
+            config = yaml.safe_load(open(os.path.join(project_path, "scripts", "ner", "pretraining_config.yaml"), "r"))
+        elif dataset == "conll2003":
             config = yaml.safe_load(open(os.path.join(project_path, "scripts", "ner", "conll2003_config.yaml"), "r"))
         elif dataset == "bc5cdr":
             config = yaml.safe_load(open(os.path.join(project_path, "scripts", "ner", "bc5cdr_config.yaml"), "r"))
@@ -128,10 +133,8 @@ def main():
     data_parsing_cfg = config["Parsing"]
     tokenisation_cfg = config["Tokenisation"]
     pre_training_cfg = config["PreTraining"]
-    training_cfg = config["Training"]
-    evaluation_cfg = config["Evaluation"]
 
-    # create all task specs
+    # create task specs
     parsing = TaskSpec(task=Parsing, config=data_parsing_cfg)
     tokenisation = TaskSpec(task=Tokenisation, config=tokenisation_cfg)
     pre_training = TaskSpec(
@@ -140,23 +143,37 @@ def main():
         expand=gs_expansion_method,
         additional_kwargs={"gpu_scaling": gpu_scaling},
     )
-    training = TaskSpec(task=NERTraining, config=training_cfg, expand=gs_expansion_method)
-    evaluation = TaskSpec(task=NEREvaluation, config=evaluation_cfg, expand=gs_expansion_method)
 
     # dependencies between tasks
     tokenisation.requires(parsing)
     pre_training.requires(tokenisation)
-    training.requires(pre_training, tokenisation)
-    evaluation.requires(tokenisation, training)
 
-    # list of all tasks
-    tasks = [
-        parsing,
-        tokenisation,
-        pre_training,
-        # training,
-        # evaluation,
-    ]
+    if not do_pre_training:
+
+        training_cfg = config["Training"]
+        evaluation_cfg = config["Evaluation"]
+
+        training = TaskSpec(task=NERTraining, config=training_cfg, expand=gs_expansion_method)
+        evaluation = TaskSpec(task=NEREvaluation, config=evaluation_cfg, expand=gs_expansion_method)
+
+        training.requires(pre_training, tokenisation)
+        evaluation.requires(tokenisation, training)
+
+        tasks = [
+            parsing,
+            tokenisation,
+            pre_training,
+            training,
+            evaluation,
+        ]
+
+    else:
+
+        tasks = [
+            parsing,
+            tokenisation,
+            pre_training,
+        ]
 
     # create list of resources
     devices = get_balanced_devices(count=num_workers, use_cuda=use_cuda, cuda_ids=cuda_ids, cuda_group=cuda_group)
