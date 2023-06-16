@@ -15,6 +15,7 @@ seed: &seed 3141
 Parsing:
   dataset:
 #    Species-800: null  # google drive down for this file?
+    FiNER-ORD: null
     CoNLL++: null
     Few-NERD: null
     JNLPBA: null

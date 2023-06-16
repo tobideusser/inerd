@@ -17,6 +17,7 @@ class BaseParser(ABC):
         "JNLPBA": "misusing_llms.parser.jnlpba_huggingface_parser.JNLPBAHuggingFaceParser",
         "Few-NERD": "misusing_llms.parser.few_nerd_huggingface_parser.FewNERDHuggingFaceParser",
         "CoNLL++": "misusing_llms.parser.conllpp_huggingface_parser.CoNLLPlusPlusHuggingFaceParser",
+        "FiNER-ORD": "misusing_llms.parser.finer_ord_huggingface_parser.FiNERORDHuggingFaceParser",
         # "Species-800": "misusing_llms.parser.species_800_huggingface_parser.Species800HuggingFaceParser",
     }
 
