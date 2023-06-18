@@ -25,7 +25,7 @@ Parsing:
     OntoNotes: null
     NCBI-disease: null
 #  dataset_name: "CoNLL-2003"
-  debug_size: 12
+  debug_size: null
   type_mapping: true
   entity_separator_token: "<ES>"
   type_content_separator_token: "<TCS>"
@@ -91,7 +91,7 @@ PreTraining:
       model_name: *modelname
       llama: *llama
       load_in_8bit: false
-      lora: false
+      lora: true
       lora_config:
         r: 8
         lora_alpha: 32
@@ -116,8 +116,8 @@ PreTraining:
 #        lr_warmup: 0.1
 
       trainer:
-        max_epochs: 3
-        accumulate_grad_batches: 4 # [2, 4]  # 4
+        max_epochs: 2
+        accumulate_grad_batches: 32 # [2, 4]  # 4
         gradient_clip_val: 1  # [1, 10]  # 10
         precision: 32
 #        precision: 16

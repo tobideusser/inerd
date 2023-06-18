@@ -140,6 +140,5 @@ class FewNERDHuggingFaceParser(BaseParser):
             validation=corpus["validation"],
             test=corpus["test"],
             name=self.dataset_name,
-            entity_tag_to_label=self.entity_tag_to_label,
         )
         return corpus_parsed

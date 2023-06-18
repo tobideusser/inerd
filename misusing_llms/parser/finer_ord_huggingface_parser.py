@@ -38,19 +38,20 @@ class FiNERORDHuggingFaceParser(BaseParser):
             desc=f"Transforming {split_type}",
             total=None if self.debug_size else len(dataset[split_type]),
         ):
-            if (token["doc_idx"], token["sent_idx"]) not in reordered:
-                i += 1
-                if self.debug_size is not None and i > self.debug_size:
-                    break
-                reordered[(token["doc_idx"], token["sent_idx"])] = {
-                    "doc_id": token["doc_idx"],
-                    "sent_id": token["sent_idx"],
-                    "ner_tags": [token["gold_label"]],
-                    "tokens": [token["gold_token"]],
-                }
-            else:
-                reordered[(token["doc_idx"], token["sent_idx"])]["ner_tags"].append(token["gold_label"])
-                reordered[(token["doc_idx"], token["sent_idx"])]["tokens"].append(token["gold_token"])
+            if token["gold_token"] is not None:
+                if (token["doc_idx"], token["sent_idx"]) not in reordered:
+                    i += 1
+                    if self.debug_size is not None and i > self.debug_size:
+                        break
+                    reordered[(token["doc_idx"], token["sent_idx"])] = {
+                        "doc_id": token["doc_idx"],
+                        "sent_id": token["sent_idx"],
+                        "ner_tags": [token["gold_label"]],
+                        "tokens": [token["gold_token"]],
+                    }
+                else:
+                    reordered[(token["doc_idx"], token["sent_idx"])]["ner_tags"].append(token["gold_label"])
+                    reordered[(token["doc_idx"], token["sent_idx"])]["tokens"].append(token["gold_token"])
 
         parsed = []
         for (doc_id, sent_id), sentence in tqdm(
