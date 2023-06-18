@@ -15,15 +15,15 @@ seed: &seed 3141
 Parsing:
   dataset:
 #    Species-800: null  # google drive down for this file?
-    FiNER-ORD: null
-    CoNLL++: null
-    Few-NERD: null
-    JNLPBA: null
-    WNUT-17: null
-#    CoNLL-2003: null
+    FiNER-ORD: true
+    CoNLL++: true
+    Few-NERD: true
+    JNLPBA: true
+    WNUT-17: true
+    CoNLL-2003: false
 #      BC5CDR: "/cluster/data/ner/bc5cdr"
-    OntoNotes: null
-    NCBI-disease: null
+    OntoNotes: true
+    NCBI-disease: true
 #  dataset_name: "CoNLL-2003"
   debug_size: null
   type_mapping: true

@@ -1,4 +1,5 @@
 import logging
+import os
 from typing import Optional, Dict, Union
 
 from fluidml import Task
@@ -51,8 +52,19 @@ class Parsing(Task):
     def run(self):
         if isinstance(self.dataset, dict):
             corpus = []
-            for dataset, path_to_data_folders in self.dataset.items():
-                corpus.append(self._parse_dataset(dataset=dataset, path_to_data_folders=path_to_data_folders))
+            for dataset, value_field in self.dataset.items():
+                if isinstance(value_field, str):
+                    if os.path.isdir(value_field):
+                        corpus.append(self._parse_dataset(dataset=dataset, path_to_data_folders=value_field))
+                    else:
+                        raise ValueError(f"{value_field} path of key '{dataset}' does not exist.")
+                elif isinstance(value_field, bool):
+                    if value_field:
+                        corpus.append(self._parse_dataset(dataset=dataset))
+                else:
+                    raise ValueError(
+                        f"Wrong datatype specified: value field of '{dataset}' is of type {type(value_field)}."
+                    )
 
         else:
             corpus = self._parse_dataset(dataset=self.dataset)
