@@ -6,6 +6,7 @@ import os
 import yaml
 from fluidml import Flow
 from fluidml.flow import TaskSpec
+from fluidml.visualization import visualize_graph_in_console
 
 from misusing_llms import project_path
 from misusing_llms.tasks import Parsing, Tokenisation, NERTraining, NEREvaluation, NERPreTraining
@@ -135,13 +136,13 @@ def main():
     pre_training_cfg = config["PreTraining"]
 
     # create task specs
-    parsing = TaskSpec(task=Parsing, config=data_parsing_cfg)
+    parsing = TaskSpec(task=Parsing, config=data_parsing_cfg, expand=gs_expansion_method, config_group_prefix="$")
     tokenisation = TaskSpec(task=Tokenisation, config=tokenisation_cfg)
     pre_training = TaskSpec(
         task=NERPreTraining,
         config=pre_training_cfg,
         expand=gs_expansion_method,
-        additional_kwargs={"gpu_scaling": gpu_scaling},
+        additional_kwargs={"gpu_scaling": gpu_scaling, "warm_start": warm_start},
     )
 
     # dependencies between tasks
@@ -153,7 +154,12 @@ def main():
         training_cfg = config["Training"]
         evaluation_cfg = config["Evaluation"]
 
-        training = TaskSpec(task=NERTraining, config=training_cfg, expand=gs_expansion_method)
+        training = TaskSpec(
+            task=NERTraining,
+            config=training_cfg,
+            expand=gs_expansion_method,
+            additional_kwargs={"gpu_scaling": gpu_scaling, "dataset": dataset, "warm_start": warm_start},
+        )
         evaluation = TaskSpec(task=NEREvaluation, config=evaluation_cfg, expand=gs_expansion_method)
 
         training.requires(pre_training, tokenisation)
@@ -188,6 +194,9 @@ def main():
     start = datetime.datetime.now()
     # create flow (expanded task graph)
     flow = Flow(tasks=tasks)
+
+    visualize_graph_in_console(graph=flow.task_graph, use_pager=False)
+
     # run linearly without swarm if num_workers is set to 1
     # note resources are now assigned equally to all tasks (e.g. device info)
     # else run graph in parallel using multiprocessing

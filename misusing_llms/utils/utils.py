@@ -22,13 +22,15 @@ def rindex(lst: List, value: Any):
     return len(lst) - operator.indexOf(reversed(lst), value) - 1
 
 
-def entity_string_to_entity_dataclass(entity_string: str) -> Union[List[Entity], List]:
-    if ";" in entity_string:
-        entity_blocks = entity_string.split(";")
+def entity_string_to_entity_dataclass(
+    entity_string: str, entity_separator_token: str, type_content_separator_token: str
+) -> Union[List[Entity], List]:
+    if entity_separator_token in entity_string:
+        entity_blocks = entity_string.split(entity_separator_token)
         entities = []
         for entity_block in entity_blocks:
-            if ":" in entity_block:
-                split = entity_block.split(":")
+            if type_content_separator_token in entity_block:
+                split = entity_block.split(type_content_separator_token)
                 if len(split[0]) > 0 and len(split[1]) > 0:
                     # remove leading and trailing space if it exists
                     entity_type = split[0].strip()
@@ -78,7 +80,7 @@ def get_balanced_devices(
                 # pass  # todo here! -> devices = [f"cuda:{id_}" for id_ in range(torch.cuda.device_count())]
         else:
             if cuda_ids is not None:
-                devices = [cuda_ids]
+                devices = [[cuda_id] for cuda_id in cuda_ids]
             else:
                 devices = [[id_] for id_ in range(torch.cuda.device_count())]
     else:

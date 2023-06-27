@@ -28,6 +28,9 @@ class GenerativeNERModel(pl.LightningModule):
         model_params: Dict,
         tokeniser: PreTrainedTokenizerFast,
         generation_params: Dict,
+        clear_cache: int = 1,
+        type_content_separator_token: str = ":",
+        entity_separator_token: str = ";",
         pad_token_id: Optional[int] = None,
         is_multigpu: bool = True,
         is_mainprocess: bool = True,
@@ -43,6 +46,8 @@ class GenerativeNERModel(pl.LightningModule):
         self.entity_set = entity_set
         self.load_in_8bit: bool = model_params["load_in_8bit"]
         self.lora: bool = model_params["lora"]
+        self.type_content_separator_token = type_content_separator_token
+        self.entity_separator_token = entity_separator_token
 
         trust_remote_code = "tiiuae/falcon" in self.model_name
         if self.load_in_8bit:
@@ -89,6 +94,8 @@ class GenerativeNERModel(pl.LightningModule):
 
         self.is_multigpu = is_multigpu
         self.is_mainprocess = is_mainprocess
+
+        self.clear_cache = clear_cache
 
         # logging stuff
         self.ground_truth_entities: List[List[dict]] = []
@@ -199,12 +206,7 @@ class GenerativeNERModel(pl.LightningModule):
     def on_test_epoch_end(self) -> None:
         self.log_metrics(split="test")
 
-    def training_step(self, batch: Dict, batch_idx: int) -> Dict:
-        return self.forward(batch)
-
-    def forward(self, batch) -> Dict:
-        # return self.model(input_ids=batch["input_ids"], labels=batch.get("labels", None))
-        # labels = batch.get("labels", None)
+    def training_step(self, batch: Dict, batch_idx: int) -> torch.Tensor:
         model_output = self.model(input_ids=batch["input_ids"], labels=batch.get("labels", None))
 
         loss = float(model_output.loss)
@@ -214,11 +216,34 @@ class GenerativeNERModel(pl.LightningModule):
             batch_size=self.trainer.train_dataloader.batch_size,
             # rank_zero_only=True,
             sync_dist=self.is_multigpu,
+            prog_bar=True,
         )
-        batch["loss"] = model_output.loss
-        return batch
+
+        if self.clear_cache > 0 and batch_idx % self.clear_cache == 0:
+            torch.cuda.empty_cache()
+
+        return model_output.loss
+
+    # def forward(self, batch) -> torch.Tensor:
+    #     # return self.model(input_ids=batch["input_ids"], labels=batch.get("labels", None))
+    #     # labels = batch.get("labels", None)
+    #     model_output = self.model(input_ids=batch["input_ids"], labels=batch.get("labels", None))
+    #
+    #     loss = float(model_output.loss)
+    #     self.log(
+    #         "train-loss-step",
+    #         loss,
+    #         batch_size=self.trainer.train_dataloader.batch_size,
+    #         # rank_zero_only=True,
+    #         sync_dist=self.is_multigpu,
+    #         prog_bar=True,
+    #     )
+    #     # batch["loss"] = model_output.loss
+    #     return model_output.loss
 
     def log_metrics(self, split: str):
+        if split == "test" and self.current_epoch == 0:
+            split = "zero-shot-test"
         metrics = self.compute_metrics()
         ner_micro_f1 = metrics["ner_micro_f1"]
         logger.info(f"Saved results: {len(self.entity_strings_predicted)} | micro f1: {metrics['ner_micro_f1']}")
@@ -289,7 +314,14 @@ class GenerativeNERModel(pl.LightningModule):
         statistics = {ent: {"tp": 0, "fp": 0, "fn": 0, "support": 0} for ent in self.entity_set}
         clf_report = {}
 
-        predicted_entities = [entity_string_to_entity_dataclass(es) for es in self.entity_strings_predicted]
+        predicted_entities = [
+            entity_string_to_entity_dataclass(
+                entity_string=es,
+                type_content_separator_token=self.type_content_separator_token,
+                entity_separator_token=self.entity_separator_token,
+            )
+            for es in self.entity_strings_predicted
+        ]
 
         # Count TP, FP and FN per type
         for prediction, ground_truth in zip(predicted_entities, self.ground_truth_entities):

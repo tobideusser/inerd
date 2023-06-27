@@ -166,10 +166,13 @@ class NERPreTraining(Task):
             if self.model_params["llama"]:
                 if "7B" in self.model_params["model_name"]:
                     model_name = "llama-7B"
+                elif "13B" in self.model_params["model_name"]:
+                    model_name = "llama-13B"
                 else:
                     model_name = "llama-?B"
             else:
                 model_name = self.model_params["model_name"]
+            datasets = self.unique_config["Parsing"]["dataset"]
             hyperparameter_to_be_logged = {
                 "informed_generation": self.informed_generation,
                 "batch_size": self.training_params["data_loading"]["batch_size"],
@@ -180,7 +183,15 @@ class NERPreTraining(Task):
                 "num_gpus": len(self.resource.device),
                 "model_8bit": self.model_params["load_in_8bit"],
                 "lora": self.model_params["lora"],
+                "accumulate_grad_batches": self.training_params["trainer"]["accumulate_grad_batches"],
+                "effective_batch_size": self.training_params["data_loading"]["batch_size"]
+                * self.training_params["trainer"]["accumulate_grad_batches"],
+                "max_epochs": self.training_params["trainer"]["max_epochs"],
+                "early_stopping": "true_patience=" + str(self.training_params["callbacks"]["patience"])
+                if self.training_params["callbacks"]["apply_early_stopping"]
+                else "false",
             }
+            hyperparameter_to_be_logged.update(datasets)
             for train_logger in loggers:
                 if isinstance(train_logger, pl.loggers.wandb.WandbLogger):
                     train_logger.experiment.config.update(hyperparameter_to_be_logged)
@@ -197,25 +208,28 @@ class NERPreTraining(Task):
             run_dir = store_context.run_dir
 
             # if not self.is_subprocess:
-            # model_checkpoint = ModelCheckpoint(
-            #     monitor=self.training_params["callbacks"].monitor_var,
-            #     dirpath=os.path.join(run_dir, "models"),
-            #     filename="best_model",
-            #     save_top_k=self.training_params["callbacks"].save_top_k,
-            #     verbose=True,
-            #     save_last=True,
-            #     mode=self.training_params["callbacks"].monitor_var_mode,
-            # )
-            model_checkpoint = ModelCheckpoint(
-                monitor="epoch",
-                every_n_epochs=1,
-                dirpath=os.path.join(run_dir, "models"),
-                verbose=True,
-                save_last=True,
-                save_on_train_epoch_end=True,
-                save_top_k=-1,
-                save_weights_only=True,
-            )
+
+            if self.gpu_scaling == "deepspeed":
+                model_checkpoint = ModelCheckpoint(
+                    monitor="epoch",
+                    every_n_epochs=1,
+                    dirpath=os.path.join(run_dir, "models"),
+                    verbose=True,
+                    save_last=True,
+                    save_on_train_epoch_end=True,
+                    save_top_k=-1,
+                    save_weights_only=True,
+                )
+            else:
+                model_checkpoint = ModelCheckpoint(
+                    monitor=self.training_params["callbacks"].monitor_var,
+                    dirpath=os.path.join(run_dir, "models"),
+                    filename="best_model",
+                    save_top_k=self.training_params["callbacks"].save_top_k,
+                    verbose=True,
+                    save_last=True,
+                    mode=self.training_params["callbacks"].monitor_var_mode,
+                )
             model_checkpoint.FILE_EXTENSION = ""  # handled by fluidml file store
             callbacks.append(model_checkpoint)
 
@@ -244,6 +258,23 @@ class NERPreTraining(Task):
             corpus = [NERCorpus.from_dict(c) for c in corpus_tokenised]
             entity_separator_token = corpus[0][0].entity_separator_token
             type_content_separator_token = corpus[0][0].type_content_separator_token
+            max_len = 700
+            logger.info(f"Setting max input length to {max_len}.")
+            i = 0
+            for c in corpus:
+                to_delete = []
+                for ii, sentence in enumerate(c.train):
+                    if len(sentence.input_tokens) > max_len:
+                        to_delete.append(ii)
+                for index in sorted(to_delete, reverse=True):
+                    del c.train[index]
+                    i += 1
+            logger.info(f"Deleted {i} occurences exceeding the max input length of {max_len}.")
+            # a = []
+            # for c in corpus:
+            #     for i, sentence in enumerate(c.train):
+            #         a.append(len(sentence.input_tokens))
+            # print(a)
         else:
             corpus = corpus_tokenised
             entity_separator_token = corpus[0].entity_separator_token
@@ -366,9 +397,11 @@ class NERPreTraining(Task):
             gpus = "auto"
             strategy = "auto"
 
+        # max_epochs = self.training_params["trainer"].pop("max_epochs")
+
         trainer = pl.Trainer(
             num_sanity_val_steps=0,
-            limit_val_batches=0,
+            limit_val_batches=0 if self.gpu_scaling == "deepspeed" else None,
             accelerator=accelerator,
             devices=gpus,
             logger=loggers,
@@ -394,48 +427,27 @@ class NERPreTraining(Task):
         else:
             learning_rate_scheduler_inputs = None
 
+        init_model_parameter = {
+            "model_params": self.model_params,
+            "optimiser_params": self.training_params["optimiser"],
+            "generation_params": self.generation_params,
+            "learning_rate_scheduler_inputs": learning_rate_scheduler_inputs,
+            "tokeniser": tokeniser,
+            # logits_processor=logits_processor,
+            "is_multigpu": True if strategy != "auto" else False,
+            "is_mainprocess": not self.is_subprocess,
+            "entity_set": entity_set,
+            "pad_token_id": pad_token_id,
+            "type_content_separator_token": type_content_separator_token,
+            "entity_separator_token": entity_separator_token,
+        }
+
         if strategy == "auto":
-            model = GenerativeNERModel(
-                model_params=self.model_params,
-                optimiser_params=self.training_params["optimiser"],
-                generation_params=self.generation_params,
-                learning_rate_scheduler_inputs=learning_rate_scheduler_inputs,
-                tokeniser=tokeniser,
-                # logits_processor=logits_processor,
-                is_multigpu=True if strategy != "auto" else False,
-                is_mainprocess=not self.is_subprocess,
-                entity_set=entity_set,
-                pad_token_id=pad_token_id,
-                # do_logging=self.is_subprocess,
-            )
+            model = GenerativeNERModel(**init_model_parameter)
         elif isinstance(strategy, FSDPStrategy):
-            model = GenerativeNERModelFSDP(
-                model_params=self.model_params,
-                optimiser_params=self.training_params["optimiser"],
-                generation_params=self.generation_params,
-                learning_rate_scheduler_inputs=learning_rate_scheduler_inputs,
-                tokeniser=tokeniser,
-                # logits_processor=logits_processor,
-                is_multigpu=True if strategy != "auto" else False,
-                is_mainprocess=not self.is_subprocess,
-                entity_set=entity_set,
-                pad_token_id=pad_token_id,
-                # do_logging=self.is_subprocess,
-            )
+            model = GenerativeNERModelFSDP(**init_model_parameter)
         elif isinstance(strategy, DeepSpeedStrategy):
-            model = GenerativeNERModelDeepSpeed(
-                model_params=self.model_params,
-                optimiser_params=self.training_params["optimiser"],
-                generation_params=self.generation_params,
-                learning_rate_scheduler_inputs=learning_rate_scheduler_inputs,
-                tokeniser=tokeniser,
-                # logits_processor=logits_processor,
-                is_multigpu=True if strategy != "auto" else False,
-                is_mainprocess=not self.is_subprocess,
-                entity_set=entity_set,
-                pad_token_id=pad_token_id,
-                # do_logging=self.is_subprocess,
-            )
+            model = GenerativeNERModelDeepSpeed(**init_model_parameter)
         else:
             raise ValueError()
 
