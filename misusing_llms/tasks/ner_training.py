@@ -19,7 +19,7 @@ from transformers.models.bloom.modeling_bloom import BloomBlock
 from transformers.models.opt.modeling_opt import OPTDecoderLayer
 
 from misusing_llms.data_classes import NERCorpus
-from misusing_llms.models import GenerativeNERModel
+from misusing_llms.models import GenerativeNERModel, GenerativeNERModelFSDP, GenerativeNERModelDeepSpeed
 from misusing_llms.training import (
     NERBatchCollator,
     GenerativeNERDataset,
@@ -41,6 +41,8 @@ class NERTraining(Task):
         training_params: Dict,
         model_params: Dict,
         generation_params: Dict,
+        dataset: str,
+        gpu_scaling: str = "auto",
         seed: int = 3141,
         warm_start: bool = False,
         wandb_logging: bool = False,
@@ -53,6 +55,8 @@ class NERTraining(Task):
         self.informed_generation = generation_params.pop("informed_generation")
         self.generation_params = generation_params
         self.seed = seed
+        self.dataset_name = dataset
+        self.gpu_scaling = gpu_scaling
         self.warm_start = warm_start
 
         self.combine_train_valid = self.training_params["data_loading"].pop("combine_train_valid", False)
@@ -124,7 +128,9 @@ class NERTraining(Task):
             initialised_loggers = []
 
             if self.wandb_logging:
-                initialised_loggers.append(WandbLogger(project=self.info.project_name, name=run_id, save_dir=run_dir))
+                initialised_loggers.append(
+                    WandbLogger(project=self.info.project_name + self.dataset_name, name=run_id, save_dir=run_dir)
+                )
                 self._save_wandb_api_path()
 
             if self.csv_logging:
@@ -155,6 +161,8 @@ class NERTraining(Task):
             if self.model_params["llama"]:
                 if "7B" in self.model_params["model_name"]:
                     model_name = "llama-7B"
+                elif "13B" in self.model_params["model_name"]:
+                    model_name = "llama-13B"
                 else:
                     model_name = "llama-?B"
             else:
@@ -169,6 +177,14 @@ class NERTraining(Task):
                 "num_gpus": len(self.resource.device),
                 "model_8bit": self.model_params["load_in_8bit"],
                 "lora": self.model_params["lora"],
+                "accumulate_grad_batches": self.training_params["trainer"]["accumulate_grad_batches"],
+                "effective_batch_size": self.training_params["data_loading"]["batch_size"]
+                * self.training_params["trainer"]["accumulate_grad_batches"],
+                "max_epochs": self.training_params["trainer"]["max_epochs"],
+                "early_stopping": "true_patience=" + str(self.training_params["callbacks"]["patience"])
+                if self.training_params["callbacks"]["apply_early_stopping"]
+                else "false",
+                "dataset": self.dataset_name,
             }
             for train_logger in loggers:
                 if isinstance(train_logger, pl.loggers.wandb.WandbLogger):
@@ -186,15 +202,27 @@ class NERTraining(Task):
             run_dir = store_context.run_dir
 
             # if not self.is_subprocess:
-            model_checkpoint = ModelCheckpoint(
-                monitor=self.training_params["callbacks"].monitor_var,
-                dirpath=os.path.join(run_dir, "models"),
-                filename="best_model",
-                save_top_k=self.training_params["callbacks"].save_top_k,
-                verbose=True,
-                save_last=True,
-                mode=self.training_params["callbacks"].monitor_var_mode,
-            )
+            if self.gpu_scaling == "deepspeed":
+                model_checkpoint = ModelCheckpoint(
+                    monitor="epoch",
+                    every_n_epochs=1,
+                    dirpath=os.path.join(run_dir, "models"),
+                    verbose=True,
+                    save_last=True,
+                    save_on_train_epoch_end=True,
+                    save_top_k=-1,
+                    save_weights_only=True,
+                )
+            else:
+                model_checkpoint = ModelCheckpoint(
+                    monitor=self.training_params["callbacks"].monitor_var,
+                    dirpath=os.path.join(run_dir, "models"),
+                    filename="best_model",
+                    save_top_k=self.training_params["callbacks"].save_top_k,
+                    verbose=True,
+                    save_last=True,
+                    mode=self.training_params["callbacks"].monitor_var_mode,
+                )
             model_checkpoint.FILE_EXTENSION = ""  # handled by fluidml file store
             callbacks.append(model_checkpoint)
 
@@ -214,11 +242,30 @@ class NERTraining(Task):
     def run(self, corpus_tokenised: NERCorpus):
 
         if isinstance(corpus_tokenised, Dict):
-            logger.info("Converting corpus_tokenised dict to Corpus object.")
+            logger.info("Converting corpus_tokenised dict to NERCorpus object.")
             corpus = NERCorpus.from_dict(corpus_tokenised)
+            entity_separator_token = corpus[0].entity_separator_token
+            type_content_separator_token = corpus[0].type_content_separator_token
+        elif isinstance(corpus_tokenised, list):
+            logger.info("Converting corpus_parsed list of dict to list of NERCorpus object.")
+            corpus = [NERCorpus.from_dict(c) for c in corpus_tokenised if c["name"] == self.dataset_name][0]
+            entity_separator_token = corpus[0].entity_separator_token
+            type_content_separator_token = corpus[0].type_content_separator_token
         else:
             corpus = corpus_tokenised
-
+            entity_separator_token = corpus[0].entity_separator_token
+            type_content_separator_token = corpus[0].type_content_separator_token
+        max_len = 700
+        logger.info(f"Setting max input length to {max_len}.")
+        i = 0
+        to_delete = []
+        for ii, sentence in enumerate(corpus.train):
+            if len(sentence.input_tokens) > max_len:
+                to_delete.append(ii)
+        for index in sorted(to_delete, reverse=True):
+            del corpus.train[index]
+            i += 1
+        logger.info(f"Deleted {i} occurences exceeding the max input length of {max_len}.")
         set_seeds(self.seed)
 
         # this disables the warning that appears when using bloom, opt, and RedPajama (and others?)
@@ -239,8 +286,14 @@ class NERTraining(Task):
         else:
             tokeniser = AutoTokenizer.from_pretrained(self.model_params["model_name"])
 
+        tokeniser.add_special_tokens(
+            {
+                "additional_special_tokens": [entity_separator_token, type_content_separator_token],
+            }
+        )
+
         if self.model_params["llama"]:
-            tokeniser.add_special_tokens({"pad_token": "<|padding|>"})
+            tokeniser.add_special_tokens({"pad_token": "<PAD>"})
             pad_token_id = tokeniser.pad_token_id
         elif "RedPajama" in self.model_params["model_name"]:
             pad_token_id = 1  # "<|padding|>" in GPT-NEOX
@@ -291,8 +344,8 @@ class NERTraining(Task):
                     vocab_size=vocab_size,
                     tokeniser=tokeniser,
                     combine_token=combine_token,
-                    entity_separator_token=";",
-                    type_content_separator_token=":",
+                    entity_separator_token=entity_separator_token,
+                    type_content_separator_token=type_content_separator_token,
                     batch_size=self.training_params["data_loading"]["batch_size"],
                     leading_space=not self.model_params["llama"],
                 )
@@ -304,12 +357,22 @@ class NERTraining(Task):
             accelerator = "gpu"
             gpus = self.resource.device
             if isinstance(gpus, list) and len(gpus) > 1:
-                if "bloom" in self.model_params["model_name"]:
-                    strategy = FSDPStrategy(cpu_offload=True, activation_checkpointing=BloomBlock)
-                elif "opt" in self.model_params["model_name"]:
-                    strategy = FSDPStrategy(cpu_offload=True, activation_checkpointing=OPTDecoderLayer)
+                if self.gpu_scaling in ["fsdp", "auto"]:
+                    strategy = FSDPStrategy(cpu_offload=False)
+                elif self.gpu_scaling == "deepspeed":
+                    strategy = DeepSpeedStrategy(
+                        stage=3,
+                        offload_optimizer=True,
+                        offload_parameters=True,
+                    )
                 else:
-                    strategy = FSDPStrategy(cpu_offload=True)
+                    strategy = "auto"
+                # if "bloom" in self.model_params["model_name"]:
+                #     strategy = FSDPStrategy(cpu_offload=True, activation_checkpointing=BloomBlock)
+                # elif "opt" in self.model_params["model_name"]:
+                #     strategy = FSDPStrategy(cpu_offload=True, activation_checkpointing=OPTDecoderLayer)
+                # else:
+                #     strategy = FSDPStrategy(cpu_offload=False)
                 # strategy = DeepSpeedStrategy(
                 #     stage=3,
                 #     offload_optimizer=True,
@@ -330,6 +393,7 @@ class NERTraining(Task):
             callbacks=callbacks,
             strategy=strategy,
             plugins=FluidmlCheckpointIO(task=self),
+            log_every_n_steps=1,
             **self.training_params["trainer"],
         )
 
@@ -349,28 +413,39 @@ class NERTraining(Task):
         else:
             learning_rate_scheduler_inputs = None
 
-        model = GenerativeNERModel(
-            model_params=self.model_params,
-            optimiser_params=self.training_params["optimiser"],
-            generation_params=self.generation_params,
-            learning_rate_scheduler_inputs=learning_rate_scheduler_inputs,
-            # evaluator_params=self.training_params["metrics"],
-            evaluator=evaluator,
-            tokeniser=tokeniser,
-            logits_processor=logits_processor,
-            is_multigpu=True if strategy != "auto" else False,
-            is_mainprocess=not self.is_subprocess,
-            entity_set=corpus.entity_set,
-            pad_token_id=pad_token_id,
-            # do_logging=self.is_subprocess,
-        )
+        init_model_parameter = {
+            "model_params": self.model_params,
+            "optimiser_params": self.training_params["optimiser"],
+            "generation_params": self.generation_params,
+            "learning_rate_scheduler_inputs": learning_rate_scheduler_inputs,
+            "tokeniser": tokeniser,
+            "logits_processor": logits_processor,
+            "is_multigpu": True if strategy != "auto" else False,
+            "is_mainprocess": not self.is_subprocess,
+            "entity_set": corpus.entity_set,
+            "pad_token_id": pad_token_id,
+            "type_content_separator_token": type_content_separator_token,
+            "entity_separator_token": entity_separator_token,
+        }
+
+        if strategy == "auto":
+            model = GenerativeNERModel(**init_model_parameter)
+        elif isinstance(strategy, FSDPStrategy):
+            model = GenerativeNERModelFSDP(**init_model_parameter)
+        elif isinstance(strategy, DeepSpeedStrategy):
+            model = GenerativeNERModelDeepSpeed(**init_model_parameter)
+        else:
+            raise ValueError()
+
+        logger.info("Doing zero-shot evaluation on test set.")
+        zero_shot_metrics = trainer.test(model=model, dataloaders=dataloaders["test"])
+        logger.info("Zero-shot metrics:")
+        logger.info(zero_shot_metrics)
 
         trainer.fit(
             model=model,
             train_dataloaders=dataloaders["train"],
             val_dataloaders=dataloaders["validation"],
-            # train_dataloaders=dataloader,
-            # val_dataloaders=dataloader,
             ckpt_path="last" if self.warm_start else None,
         )
 
