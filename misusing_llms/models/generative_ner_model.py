@@ -40,6 +40,7 @@ class GenerativeNERModel(pl.LightningModule):
         evaluator_params: Optional[Dict] = None,
         evaluator: Optional[Evaluator] = None,
         entity_set: Optional[Set[str]] = None,
+        hf_cache_dir: Optional[str] = None,
     ):
         super().__init__()
         self.model_name = model_params["model_name"]
@@ -52,13 +53,21 @@ class GenerativeNERModel(pl.LightningModule):
         trust_remote_code = "tiiuae/falcon" in self.model_name
         if self.load_in_8bit:
             self.model = AutoModelForCausalLM.from_pretrained(
-                self.model_name, load_in_8bit=True, device_map="auto", trust_remote_code=trust_remote_code
+                self.model_name,
+                load_in_8bit=True,
+                device_map="auto",
+                trust_remote_code=trust_remote_code,
+                cache_dir=hf_cache_dir,
             )
         else:
             if model_params["llama"]:
                 self.model = LlamaForCausalLM.from_pretrained(self.model_name)
             else:
-                self.model = AutoModelForCausalLM.from_pretrained(self.model_name, trust_remote_code=trust_remote_code)
+                self.model = AutoModelForCausalLM.from_pretrained(
+                    self.model_name,
+                    trust_remote_code=trust_remote_code,
+                    cache_dir=hf_cache_dir,
+                )
 
         if ("tiiuae/falcon" in self.model_name or model_params["llama"]) and self.model.lm_head.out_features != len(
             tokeniser
