@@ -16,7 +16,7 @@ from pytorch_lightning.utilities import rank_zero_only
 
 from transformers.generation import GenerationConfig, LogitsProcessorList, StoppingCriteriaList
 
-from misusing_llms.training import Optimiser, LearningRateScheduler, Evaluator
+from misusing_llms.training import Optimiser, LearningRateScheduler
 from misusing_llms.utils import entity_string_to_entity_dataclass
 
 logger = logging.getLogger(__name__)
@@ -37,8 +37,8 @@ class GenerativeNERModel(pl.LightningModule):
         logits_processor: Optional[LogitsProcessorList] = None,
         optimiser_params: Optional[Dict] = None,
         learning_rate_scheduler_inputs: Optional[Dict] = None,
-        evaluator_params: Optional[Dict] = None,
-        evaluator: Optional[Evaluator] = None,
+        # evaluator_params: Optional[Dict] = None,
+        # evaluator: Optional[Evaluator] = None,
         entity_set: Optional[Set[str]] = None,
         hf_cache_dir: Optional[str] = None,
     ):
@@ -96,10 +96,10 @@ class GenerativeNERModel(pl.LightningModule):
         self.generation_params = generation_params
         self.optimiser_params = optimiser_params
         self.learning_rate_scheduler_inputs = learning_rate_scheduler_inputs
-        if evaluator is not None:
-            self.evaluator = evaluator
-        elif evaluator_params is not None:
-            self.evaluator = Evaluator.from_config(**evaluator_params)
+        # if evaluator is not None:
+        #     self.evaluator = evaluator
+        # elif evaluator_params is not None:
+        #     self.evaluator = Evaluator.from_config(**evaluator_params)
 
         self.is_multigpu = is_multigpu
         self.is_mainprocess = is_mainprocess
