@@ -1,6 +1,8 @@
+import json
 import logging
 import os
-from typing import Dict, List, Union
+from datetime import timedelta
+from typing import Dict, List, Union, Optional
 
 import pytorch_lightning as pl
 import wandb
@@ -45,6 +47,7 @@ class NERPreTraining(Task):
         warm_start: bool = False,
         wandb_logging: bool = False,
         csv_logging: bool = True,
+        checkpointing_time_interval: Optional[float] = None,
     ):
         super().__init__()
 
@@ -54,6 +57,9 @@ class NERPreTraining(Task):
         self.generation_params = generation_params
         self.seed = seed
         self.warm_start = warm_start
+        self.checkpointing_time_interval = (
+            timedelta(seconds=checkpointing_time_interval) if checkpointing_time_interval is not None else None
+        )
         self.gpu_scaling = gpu_scaling
 
         self.combine_train_valid = self.training_params["data_loading"].pop("combine_train_valid", False)
@@ -133,8 +139,20 @@ class NERPreTraining(Task):
             initialised_loggers = []
 
             if self.wandb_logging:
+                if self.warm_start:
+                    path_to_api_key = os.path.join(
+                        store_context.run_dir, "wandb", "latest-run", "files", "wandb_api_path.json"
+                    )
+                    with open(path_to_api_key) as file:
+                        wandb_api_path = json.load(file)
+                    print(wandb_api_path)
+                    wandb_id = wandb_api_path["wandb_api_path"].split("/")[-1]
+                else:
+                    wandb_id = None
                 initialised_loggers.append(
-                    WandbLogger(project=self.info.project_name + "pretraining", name=run_id, save_dir=run_dir)
+                    WandbLogger(
+                        project=self.info.project_name + "pretraining", name=run_id, save_dir=run_dir, id=wandb_id
+                    )
                 )
                 self._save_wandb_api_path()
 
@@ -232,6 +250,20 @@ class NERPreTraining(Task):
                 )
             model_checkpoint.FILE_EXTENSION = ""  # handled by fluidml file store
             callbacks.append(model_checkpoint)
+
+            if self.checkpointing_time_interval:
+                model_checkpoint_time = ModelCheckpoint(
+                    monitor=self.training_params["callbacks"].monitor_var,
+                    dirpath=os.path.join(run_dir, "models"),
+                    filename="time_ckpt",
+                    save_top_k=1,
+                    verbose=True,
+                    save_last=True,
+                    mode=self.training_params["callbacks"].monitor_var_mode,
+                    train_time_interval=self.checkpointing_time_interval,
+                )
+                model_checkpoint_time.FILE_EXTENSION = ""
+                callbacks.append(model_checkpoint_time)
 
         if self.training_params["callbacks"].apply_early_stopping:
             if not self.is_subprocess:
@@ -440,6 +472,7 @@ class NERPreTraining(Task):
             "pad_token_id": pad_token_id,
             "type_content_separator_token": type_content_separator_token,
             "entity_separator_token": entity_separator_token,
+            "hf_cache_dir": os.path.join(self.results_store.base_dir, ".hfcache"),
         }
 
         if strategy == "auto":
