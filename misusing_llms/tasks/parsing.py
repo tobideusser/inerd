@@ -44,6 +44,7 @@ class Parsing(Task):
             path_to_data_folders=path_to_data_folders,
             type_content_separator_token=self.type_content_separator_token,
             entity_separator_token=self.entity_separator_token,
+            cache_dir=os.path.join(self.results_store.base_dir, ".hfcache"),
             **self.parsing_cfg,
         )
         corpus = parser.parse()

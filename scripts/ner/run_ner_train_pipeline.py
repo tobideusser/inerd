@@ -20,6 +20,17 @@ from misusing_llms.utils import get_balanced_devices, is_debug
 logger = logging.getLogger(__name__)
 
 
+def valid_timedelta(s: str):
+    try:
+        s = s.split(":")
+        if len(s) != 3:
+            raise ValueError
+        return datetime.timedelta(days=int(s[0]), hours=int(s[1]), minutes=int(s[2]))
+    except ValueError:
+        msg = f"not a valid timedelta: {s}"
+        raise argparse.ArgumentTypeError(msg)
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -73,6 +84,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--log-to-tmux", action="store_true", help="Log to several tmux panes.")
     parser.add_argument("--project-name", type=str, default="iNERD", help="Name of project.")
     parser.add_argument("--run-name", type=str, default=None, help="Name of run.")
+    parser.add_argument(
+        "--checkpointing-time-interval",
+        help="Time interval to do model checkpointing - format DD:hh:mm",
+        default=None,
+        type=valid_timedelta,
+    )
     return parser.parse_args()
 
 
@@ -99,6 +116,7 @@ def main():
     base_dir = config["base_dir"]
 
     # Parse run settings from argparse (defaults and choices see above in argparse)
+    checkpointing_time_interval = args.checkpointing_time_interval
     num_workers = args.num_workers  # 1
     force = args.force  # "ModelTraining+"
     use_cuda = args.use_cuda
@@ -142,7 +160,13 @@ def main():
         task=NERPreTraining,
         config=pre_training_cfg,
         expand=gs_expansion_method,
-        additional_kwargs={"gpu_scaling": gpu_scaling, "warm_start": warm_start},
+        additional_kwargs={
+            "gpu_scaling": gpu_scaling,
+            "warm_start": warm_start,
+            "checkpointing_time_interval": checkpointing_time_interval.total_seconds()
+            if checkpointing_time_interval is not None
+            else None,
+        },
     )
 
     # dependencies between tasks
@@ -158,7 +182,14 @@ def main():
             task=NERTraining,
             config=training_cfg,
             expand=gs_expansion_method,
-            additional_kwargs={"gpu_scaling": gpu_scaling, "dataset": dataset, "warm_start": warm_start},
+            additional_kwargs={
+                "gpu_scaling": gpu_scaling,
+                "dataset": dataset,
+                "warm_start": warm_start,
+                "checkpointing_time_interval": checkpointing_time_interval.total_seconds()
+                if checkpointing_time_interval is not None
+                else None,
+            },
         )
         evaluation = TaskSpec(task=NEREvaluation, config=evaluation_cfg, expand=gs_expansion_method)
 

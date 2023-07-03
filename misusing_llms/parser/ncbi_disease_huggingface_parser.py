@@ -15,6 +15,7 @@ class NCBIDiseaseHuggingFaceParser(BaseParser):
         type_mapping: bool = False,
         debug_size: Optional[int] = None,
         dataset_name: Optional[str] = None,
+        cache_dir: Optional[str] = None,
     ):
         if type_mapping:
             ValueError("No type_mapping implemented for NCBI-disease.")
@@ -23,6 +24,7 @@ class NCBIDiseaseHuggingFaceParser(BaseParser):
             debug_size=debug_size,
             entity_separator_token=entity_separator_token,
             type_content_separator_token=type_content_separator_token,
+            cache_dir=cache_dir,
         )
         self.dataset_name = dataset_name if dataset_name else "NCBI-disease"
 
@@ -52,7 +54,7 @@ class NCBIDiseaseHuggingFaceParser(BaseParser):
         return parsed
 
     def parse(self) -> NERCorpus:
-        dataset = load_dataset("ncbi_disease")
+        dataset = load_dataset("ncbi_disease", cache_dir=self.cache_dir)
         corpus = {"train": [], "validation": [], "test": []}
         entity_labels = dataset["train"].features["ner_tags"].feature.names
         self.entity_tag_to_label = {i: entity_label for i, entity_label in enumerate(entity_labels)}

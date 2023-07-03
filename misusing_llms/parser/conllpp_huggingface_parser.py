@@ -15,6 +15,7 @@ class CoNLLPlusPlusHuggingFaceParser(BaseParser):
         type_mapping: bool = True,
         debug_size: Optional[int] = None,
         dataset_name: Optional[str] = None,
+        cache_dir: Optional[str] = None,
     ):
         if type_mapping:
             type_mapping = {"PER": "Person", "LOC": "Location", "ORG": "Organisation", "MISC": "Miscellaneous"}
@@ -25,6 +26,7 @@ class CoNLLPlusPlusHuggingFaceParser(BaseParser):
             debug_size=debug_size,
             entity_separator_token=entity_separator_token,
             type_content_separator_token=type_content_separator_token,
+            cache_dir=cache_dir,
         )
         self.dataset_name = dataset_name if dataset_name else "CoNLL++"
 
@@ -52,7 +54,7 @@ class CoNLLPlusPlusHuggingFaceParser(BaseParser):
         return parsed
 
     def parse(self) -> NERCorpus:
-        dataset = load_dataset("conllpp")
+        dataset = load_dataset("conllpp", cache_dir=self.cache_dir)
         corpus = {"train": [], "validation": [], "test": []}
         # source: https://huggingface.co/datasets/conll2003
         self.entity_tag_to_label = {

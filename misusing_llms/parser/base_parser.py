@@ -27,11 +27,13 @@ class BaseParser(ABC):
         type_content_separator_token: str,
         type_mapping: Optional[Dict] = None,
         debug_size: Optional[int] = None,
+        cache_dir: Optional[str] = None,
     ):
         self.type_mapping = type_mapping
         self.debug_size = debug_size
         self.entity_separator_token = entity_separator_token
         self.type_content_separator_token = type_content_separator_token
+        self.cache_dir = cache_dir
 
         self.entity_tag_to_label = None
         self._begin_tags = None

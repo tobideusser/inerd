@@ -28,5 +28,6 @@ setup(
         "accelerate",
         "peft",
         "einops==0.6.1",
+        "sentencepiece==0.1.99",
     ],
 )
