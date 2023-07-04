@@ -111,7 +111,8 @@ def main():
             config = yaml.safe_load(open(os.path.join(project_path, "scripts", "ner", "conll2003_config.yaml"), "r"))
         elif dataset == "bc5cdr":
             config = yaml.safe_load(open(os.path.join(project_path, "scripts", "ner", "bc5cdr_config.yaml"), "r"))
-        elif dataset == "ontonotes":
+        elif dataset in ["ontonotes", "OntoNotes"]:
+            dataset = "OntoNotes"
             config = yaml.safe_load(open(os.path.join(project_path, "scripts", "ner", "ontonotes_config.yaml"), "r"))
         elif dataset in ["few-nerd", "Few-NERD", "fewnerd", "FewNERD"]:
             dataset = "Few-NERD"
