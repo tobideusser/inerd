@@ -7,30 +7,20 @@ from typing import Dict, List, Union, Optional
 import pytorch_lightning as pl
 import wandb
 from fluidml import Task
-from pytorch_lightning.callbacks import (
-    EarlyStopping,
-    ModelCheckpoint,
-    LearningRateMonitor,
-)
 from pytorch_lightning.loggers import TensorBoardLogger, WandbLogger, CSVLogger
 from pytorch_lightning.strategies import FSDPStrategy, DeepSpeedStrategy
-from torch.utils.data import DataLoader
-from transformers import AutoTokenizer, LogitsProcessorList, LlamaTokenizer
-from transformers.models.bloom.modeling_bloom import BloomBlock
-from transformers.models.opt.modeling_opt import OPTDecoderLayer
+from transformers import AutoTokenizer, LlamaTokenizer
 
 from misusing_llms.data_classes import NERCorpus
 from misusing_llms.models import GenerativeNERModel, GenerativeNERModelFSDP, GenerativeNERModelDeepSpeed
 from misusing_llms.training import (
     NERBatchCollator,
     GenerativeNERDataset,
-    ProgressBar,
-    ExceptionHandling,
     FluidmlCheckpointIO,
-    Evaluator,
-    InformedNERDecoderLogitsProcessor,
 )
-from misusing_llms.utils import set_seeds, is_debug
+from misusing_llms.training.callbacks import init_model_callbacks
+from misusing_llms.training.dataloader import init_torch_dataloaders
+from misusing_llms.utils import set_seeds
 from misusing_llms.utils.fluid_helper import log_to_file
 
 logger = logging.getLogger(__name__)
@@ -102,33 +92,33 @@ class NERPreTraining(Task):
 
         return datasets
 
-    def _init_torch_dataloaders(
-        self,
-        datasets: Dict[str, GenerativeNERDataset],
-        batch_collator: NERBatchCollator,
-    ) -> Dict[str, DataLoader]:
-
-        if is_debug():
-            logger.warning(
-                "Debug mode detected, setting num_workers=0 for torch dataloader. This allows proper debugging."
-            )
-            num_workers = 0
-        else:
-            num_workers = 25
-
-        dataloaders = {}
-        for split_type, split_dataset in datasets.items():
-
-            dataloaders[split_type] = DataLoader(
-                dataset=split_dataset,
-                collate_fn=batch_collator,
-                shuffle=True if split_type == "train" else False,
-                num_workers=num_workers,
-                # drop_last=True,
-                **self.training_params["data_loading"],
-            )
-
-        return dataloaders
+    # def _init_torch_dataloaders(
+    #     self,
+    #     datasets: Dict[str, GenerativeNERDataset],
+    #     batch_collator: NERBatchCollator,
+    # ) -> Dict[str, DataLoader]:
+    #
+    #     if is_debug():
+    #         logger.warning(
+    #             "Debug mode detected, setting num_workers=0 for torch dataloader. This allows proper debugging."
+    #         )
+    #         num_workers = 0
+    #     else:
+    #         num_workers = 25
+    #
+    #     dataloaders = {}
+    #     for split_type, split_dataset in datasets.items():
+    #
+    #         dataloaders[split_type] = DataLoader(
+    #             dataset=split_dataset,
+    #             collate_fn=batch_collator,
+    #             shuffle=True if split_type == "train" else False,
+    #             num_workers=num_workers,
+    #             # drop_last=True,
+    #             **self.training_params["data_loading"],
+    #         )
+    #
+    #     return dataloaders
 
     def _init_model_loggers(self) -> Union[List, None]:
         store_context = self.get_store_context()
@@ -140,13 +130,15 @@ class NERPreTraining(Task):
 
             if self.wandb_logging:
                 if self.warm_start:
-                    path_to_api_key = os.path.join(
-                        store_context.run_dir, "wandb", "latest-run", "files", "wandb_api_path.json"
-                    )
-                    with open(path_to_api_key) as file:
-                        wandb_api_path = json.load(file)
-                    print(wandb_api_path)
-                    wandb_id = wandb_api_path["wandb_api_path"].split("/")[-1]
+                    try:
+                        path_to_api_key = os.path.join(
+                            store_context.run_dir, "wandb", "latest-run", "files", "wandb_api_path.json"
+                        )
+                        with open(path_to_api_key) as file:
+                            wandb_api_path = json.load(file)
+                        wandb_id = wandb_api_path["wandb_api_path"].split("/")[-1]
+                    except FileNotFoundError:
+                        wandb_id = None
                 else:
                     wandb_id = None
                 initialised_loggers.append(
@@ -214,68 +206,68 @@ class NERPreTraining(Task):
                 if isinstance(train_logger, pl.loggers.wandb.WandbLogger):
                     train_logger.experiment.config.update(hyperparameter_to_be_logged)
 
-    def _init_model_callbacks(self) -> List:
-        callbacks = [
-            ProgressBar(),
-            LearningRateMonitor(logging_interval="step"),
-            ExceptionHandling(),
-        ]
-
-        store_context = self.get_store_context()
-        if store_context:
-            run_dir = store_context.run_dir
-
-            # if not self.is_subprocess:
-
-            if self.gpu_scaling == "deepspeed":
-                model_checkpoint = ModelCheckpoint(
-                    monitor="epoch",
-                    every_n_epochs=1,
-                    dirpath=os.path.join(run_dir, "models"),
-                    verbose=True,
-                    save_last=True,
-                    save_on_train_epoch_end=True,
-                    save_top_k=-1,
-                    save_weights_only=True,
-                )
-            else:
-                model_checkpoint = ModelCheckpoint(
-                    monitor=self.training_params["callbacks"].monitor_var,
-                    dirpath=os.path.join(run_dir, "models"),
-                    filename="best_model",
-                    save_top_k=self.training_params["callbacks"].save_top_k,
-                    verbose=True,
-                    save_last=True,
-                    mode=self.training_params["callbacks"].monitor_var_mode,
-                )
-            model_checkpoint.FILE_EXTENSION = ""  # handled by fluidml file store
-            callbacks.append(model_checkpoint)
-
-            if self.checkpointing_time_interval:
-                model_checkpoint_time = ModelCheckpoint(
-                    monitor=self.training_params["callbacks"].monitor_var,
-                    dirpath=os.path.join(run_dir, "models"),
-                    filename="time_ckpt",
-                    save_top_k=1,
-                    verbose=True,
-                    save_last=True,
-                    mode=self.training_params["callbacks"].monitor_var_mode,
-                    train_time_interval=self.checkpointing_time_interval,
-                )
-                model_checkpoint_time.FILE_EXTENSION = ""
-                callbacks.append(model_checkpoint_time)
-
-        if self.training_params["callbacks"].apply_early_stopping:
-            if not self.is_subprocess:
-                callbacks.append(
-                    EarlyStopping(
-                        monitor=self.training_params["callbacks"].monitor_var,
-                        mode=self.training_params["callbacks"].monitor_var_mode,
-                        patience=self.training_params["callbacks"].patience,
-                    )
-                )
-
-        return callbacks
+    # def _init_model_callbacks(self) -> List:
+    #     callbacks = [
+    #         ProgressBar(),
+    #         LearningRateMonitor(logging_interval="step"),
+    #         ExceptionHandling(),
+    #     ]
+    #
+    #     store_context = self.get_store_context()
+    #     if store_context:
+    #         run_dir = store_context.run_dir
+    #
+    #         # if not self.is_subprocess:
+    #
+    #         if self.gpu_scaling == "deepspeed":
+    #             model_checkpoint = ModelCheckpoint(
+    #                 monitor="epoch",
+    #                 every_n_epochs=1,
+    #                 dirpath=os.path.join(run_dir, "models"),
+    #                 verbose=True,
+    #                 save_last=True,
+    #                 save_on_train_epoch_end=True,
+    #                 save_top_k=-1,
+    #                 save_weights_only=True,
+    #             )
+    #         else:
+    #             model_checkpoint = ModelCheckpoint(
+    #                 monitor=self.training_params["callbacks"].monitor_var,
+    #                 dirpath=os.path.join(run_dir, "models"),
+    #                 filename="best_model",
+    #                 save_top_k=self.training_params["callbacks"].save_top_k,
+    #                 verbose=True,
+    #                 save_last=True,
+    #                 mode=self.training_params["callbacks"].monitor_var_mode,
+    #             )
+    #         model_checkpoint.FILE_EXTENSION = ""  # handled by fluidml file store
+    #         callbacks.append(model_checkpoint)
+    #
+    #         if self.checkpointing_time_interval:
+    #             model_checkpoint_time = ModelCheckpoint(
+    #                 monitor=self.training_params["callbacks"].monitor_var,
+    #                 dirpath=os.path.join(run_dir, "models"),
+    #                 filename="time_ckpt",
+    #                 save_top_k=1,
+    #                 verbose=True,
+    #                 save_last=True,
+    #                 mode=self.training_params["callbacks"].monitor_var_mode,
+    #                 train_time_interval=self.checkpointing_time_interval,
+    #             )
+    #             model_checkpoint_time.FILE_EXTENSION = ""
+    #             callbacks.append(model_checkpoint_time)
+    #
+    #     if self.training_params["callbacks"].apply_early_stopping:
+    #         if not self.is_subprocess:
+    #             callbacks.append(
+    #                 EarlyStopping(
+    #                     monitor=self.training_params["callbacks"].monitor_var,
+    #                     mode=self.training_params["callbacks"].monitor_var_mode,
+    #                     patience=self.training_params["callbacks"].patience,
+    #                 )
+    #             )
+    #
+    #     return callbacks
 
     @log_to_file
     def run(self, corpus_tokenised: NERCorpus):
@@ -354,9 +346,26 @@ class NERPreTraining(Task):
 
         batch_collator = NERBatchCollator(pad_token_id=pad_token_id)
         datasets = self._init_torch_datasets(corpus=corpus)
-        dataloaders = self._init_torch_dataloaders(datasets, batch_collator)
+        dataloaders = init_torch_dataloaders(
+            datasets=datasets, batch_collator=batch_collator, logger=logger, **self.training_params["data_loading"]
+        )
+        # dataloaders = self._init_torch_dataloaders(datasets, batch_collator)
         loggers = self._init_model_loggers()
-        callbacks = self._init_model_callbacks()
+        # callbacks = self._init_model_callbacks()
+        if self.get_store_context():
+            callbacks = init_model_callbacks(
+                run_dir=self.get_store_context().run_dir,
+                gpu_scaling=self.gpu_scaling,
+                monitor_var=self.training_params["callbacks"].monitor_var,
+                save_top_k=self.training_params["callbacks"].save_top_k,
+                monitor_var_mode=self.training_params["callbacks"].monitor_var_mode,
+                checkpointing_time_interval=self.checkpointing_time_interval,
+                apply_early_stopping=self.training_params["callbacks"].apply_early_stopping,
+                is_subprocess=self.is_subprocess,
+                patience=self.training_params["callbacks"].patience,
+            )
+        else:
+            callbacks = init_model_callbacks()
 
         entity_set = set()
         for c in corpus:

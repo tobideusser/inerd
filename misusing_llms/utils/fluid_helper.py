@@ -70,10 +70,11 @@ class MyLocalFileStore(LocalFileStore):
     def _load_pl_checkpoint(
         self,
         path: Union[str, Path],
-        type_: str,
+        type_: Optional[str] = None,
         map_location: Optional[Callable] = lambda storage, loc: storage,
     ) -> Dict[str, Any]:
-        assert type_ == "pl_checkpoint"
+        if type_ is not None:
+            assert type_ == "pl_checkpoint"
         return self.torch_checkpoint_io.load_checkpoint(path=path, map_location=map_location)
         # Try to read the checkpoint at `path`. If not exist, do not restore checkpoint.
         # fs = get_filesystem(path)

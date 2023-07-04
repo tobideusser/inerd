@@ -58,7 +58,10 @@ class Tokenisation(Task):
     def run(self, corpus_parsed: Union[Dict, NERCorpus, List]):
         set_seed_number(self.seed)
         set_seeds()
-        self.unique_config["Parsing"].get("combine_token", "\n")
+        try:
+            self.unique_config["Parsing"].get("combine_token", "\n")
+        except KeyError:
+            self.unique_config["DatasetSpecificParsing"].get("combine_token", "\n")
 
         if isinstance(corpus_parsed, Dict):
             logger.info("Converting corpus_parsed dict to NERCorpus object.")

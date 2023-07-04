@@ -1,36 +1,28 @@
+import json
 import logging
 import os
-from typing import Dict, List, Union
+from datetime import timedelta
+from typing import Dict, List, Union, Optional
 
-import torch
 import pytorch_lightning as pl
 import wandb
 from fluidml import Task
-from pytorch_lightning.callbacks import (
-    EarlyStopping,
-    ModelCheckpoint,
-    LearningRateMonitor,
-)
-from pytorch_lightning.loggers import TensorBoardLogger, WandbLogger, CSVLogger
+from pytorch_lightning.loggers import WandbLogger, CSVLogger
 from pytorch_lightning.strategies import FSDPStrategy, DeepSpeedStrategy
-from torch.utils.data import DataLoader, Dataset
 from transformers import AutoTokenizer, LogitsProcessorList, LlamaTokenizer
-from transformers.models.bloom.modeling_bloom import BloomBlock
-from transformers.models.opt.modeling_opt import OPTDecoderLayer
 
 from misusing_llms.data_classes import NERCorpus
 from misusing_llms.models import GenerativeNERModel, GenerativeNERModelFSDP, GenerativeNERModelDeepSpeed
 from misusing_llms.training import (
     NERBatchCollator,
     GenerativeNERDataset,
-    ProgressBar,
-    ExceptionHandling,
     FluidmlCheckpointIO,
-    Evaluator,
     InformedNERDecoderLogitsProcessor,
 )
+from misusing_llms.training.callbacks import init_model_callbacks
+from misusing_llms.training.dataloader import init_torch_dataloaders
+from misusing_llms.utils import set_seeds
 from misusing_llms.utils.fluid_helper import log_to_file
-from misusing_llms.utils import set_seeds, set_device, is_debug
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +39,7 @@ class NERTraining(Task):
         warm_start: bool = False,
         wandb_logging: bool = False,
         csv_logging: bool = True,
+        checkpointing_time_interval: Optional[float] = None,
     ):
         super().__init__()
 
@@ -58,6 +51,9 @@ class NERTraining(Task):
         self.dataset_name = dataset
         self.gpu_scaling = gpu_scaling
         self.warm_start = warm_start
+        self.checkpointing_time_interval = (
+            timedelta(seconds=checkpointing_time_interval) if checkpointing_time_interval is not None else None
+        )
 
         self.combine_train_valid = self.training_params["data_loading"].pop("combine_train_valid", False)
 
@@ -91,33 +87,33 @@ class NERTraining(Task):
 
         return datasets
 
-    def _init_torch_dataloaders(
-        self,
-        datasets: Dict[str, GenerativeNERDataset],
-        batch_collator: NERBatchCollator,
-    ) -> Dict[str, DataLoader]:
-
-        if is_debug():
-            logger.warning(
-                "Debug mode detected, setting num_workers=0 for torch dataloader. This allows proper debugging."
-            )
-            num_workers = 0
-        else:
-            num_workers = 25
-
-        dataloaders = {}
-        for split_type, split_dataset in datasets.items():
-
-            dataloaders[split_type] = DataLoader(
-                dataset=split_dataset,
-                collate_fn=batch_collator,
-                shuffle=True if split_type == "train" else False,
-                num_workers=num_workers,
-                # drop_last=True,
-                **self.training_params["data_loading"],
-            )
-
-        return dataloaders
+    # def _init_torch_dataloaders(
+    #     self,
+    #     datasets: Dict[str, GenerativeNERDataset],
+    #     batch_collator: NERBatchCollator,
+    # ) -> Dict[str, DataLoader]:
+    #
+    #     if is_debug():
+    #         logger.warning(
+    #             "Debug mode detected, setting num_workers=0 for torch dataloader. This allows proper debugging."
+    #         )
+    #         num_workers = 0
+    #     else:
+    #         num_workers = 25
+    #
+    #     dataloaders = {}
+    #     for split_type, split_dataset in datasets.items():
+    #
+    #         dataloaders[split_type] = DataLoader(
+    #             dataset=split_dataset,
+    #             collate_fn=batch_collator,
+    #             shuffle=True if split_type == "train" else False,
+    #             num_workers=num_workers,
+    #             # drop_last=True,
+    #             **self.training_params["data_loading"],
+    #         )
+    #
+    #     return dataloaders
 
     def _init_model_loggers(self) -> Union[List, None]:
         store_context = self.get_store_context()
@@ -128,8 +124,24 @@ class NERTraining(Task):
             initialised_loggers = []
 
             if self.wandb_logging:
+                if self.warm_start:
+                    try:
+                        path_to_api_key = os.path.join(
+                            store_context.run_dir, "wandb", "latest-run", "files", "wandb_api_path.json"
+                        )
+                        with open(path_to_api_key) as file:
+                            wandb_api_path = json.load(file)
+                        wandb_id = wandb_api_path["wandb_api_path"].split("/")[-1]
+                    except FileNotFoundError:
+                        wandb_id = None
+                else:
+                    wandb_id = None
+                if self.training_params["trainer"]["max_epochs"] > 1:
+                    project_name = self.info.project_name + "finetuning"
+                else:
+                    project_name = self.info.project_name + "onefewshot"
                 initialised_loggers.append(
-                    WandbLogger(project=self.info.project_name + self.dataset_name, name=run_id, save_dir=run_dir)
+                    WandbLogger(project=project_name, name=run_id, save_dir=run_dir, id=wandb_id)
                 )
                 self._save_wandb_api_path()
 
@@ -190,56 +202,56 @@ class NERTraining(Task):
                 if isinstance(train_logger, pl.loggers.wandb.WandbLogger):
                     train_logger.experiment.config.update(hyperparameter_to_be_logged)
 
-    def _init_model_callbacks(self) -> List:
-        callbacks = [
-            ProgressBar(),
-            LearningRateMonitor(logging_interval="step"),
-            ExceptionHandling(),
-        ]
-
-        store_context = self.get_store_context()
-        if store_context:
-            run_dir = store_context.run_dir
-
-            # if not self.is_subprocess:
-            if self.gpu_scaling == "deepspeed":
-                model_checkpoint = ModelCheckpoint(
-                    monitor="epoch",
-                    every_n_epochs=1,
-                    dirpath=os.path.join(run_dir, "models"),
-                    verbose=True,
-                    save_last=True,
-                    save_on_train_epoch_end=True,
-                    save_top_k=-1,
-                    save_weights_only=True,
-                )
-            else:
-                model_checkpoint = ModelCheckpoint(
-                    monitor=self.training_params["callbacks"].monitor_var,
-                    dirpath=os.path.join(run_dir, "models"),
-                    filename="best_model",
-                    save_top_k=self.training_params["callbacks"].save_top_k,
-                    verbose=True,
-                    save_last=True,
-                    mode=self.training_params["callbacks"].monitor_var_mode,
-                )
-            model_checkpoint.FILE_EXTENSION = ""  # handled by fluidml file store
-            callbacks.append(model_checkpoint)
-
-        if self.training_params["callbacks"].apply_early_stopping:
-            if not self.is_subprocess:
-                callbacks.append(
-                    EarlyStopping(
-                        monitor=self.training_params["callbacks"].monitor_var,
-                        mode=self.training_params["callbacks"].monitor_var_mode,
-                        patience=self.training_params["callbacks"].patience,
-                    )
-                )
-
-        return callbacks
+    # def _init_model_callbacks(self) -> List:
+    #     callbacks = [
+    #         ProgressBar(),
+    #         LearningRateMonitor(logging_interval="step"),
+    #         ExceptionHandling(),
+    #     ]
+    #
+    #     store_context = self.get_store_context()
+    #     if store_context:
+    #         run_dir = store_context.run_dir
+    #
+    #         # if not self.is_subprocess:
+    #         if self.gpu_scaling == "deepspeed":
+    #             model_checkpoint = ModelCheckpoint(
+    #                 monitor="epoch",
+    #                 every_n_epochs=1,
+    #                 dirpath=os.path.join(run_dir, "models"),
+    #                 verbose=True,
+    #                 save_last=True,
+    #                 save_on_train_epoch_end=True,
+    #                 save_top_k=-1,
+    #                 save_weights_only=True,
+    #             )
+    #         else:
+    #             model_checkpoint = ModelCheckpoint(
+    #                 monitor=self.training_params["callbacks"].monitor_var,
+    #                 dirpath=os.path.join(run_dir, "models"),
+    #                 filename="best_model",
+    #                 save_top_k=self.training_params["callbacks"].save_top_k,
+    #                 verbose=True,
+    #                 save_last=True,
+    #                 mode=self.training_params["callbacks"].monitor_var_mode,
+    #             )
+    #         model_checkpoint.FILE_EXTENSION = ""  # handled by fluidml file store
+    #         callbacks.append(model_checkpoint)
+    #
+    #     if self.training_params["callbacks"].apply_early_stopping:
+    #         if not self.is_subprocess:
+    #             callbacks.append(
+    #                 EarlyStopping(
+    #                     monitor=self.training_params["callbacks"].monitor_var,
+    #                     mode=self.training_params["callbacks"].monitor_var_mode,
+    #                     patience=self.training_params["callbacks"].patience,
+    #                 )
+    #             )
+    #
+    #     return callbacks
 
     @log_to_file
-    def run(self, corpus_tokenised: NERCorpus):
+    def run(self, corpus_tokenised: NERCorpus, best_model: Dict):
 
         if isinstance(corpus_tokenised, Dict):
             logger.info("Converting corpus_tokenised dict to NERCorpus object.")
@@ -247,8 +259,15 @@ class NERTraining(Task):
             entity_separator_token = corpus[0].entity_separator_token
             type_content_separator_token = corpus[0].type_content_separator_token
         elif isinstance(corpus_tokenised, list):
-            logger.info("Converting corpus_parsed list of dict to list of NERCorpus object.")
-            corpus = [NERCorpus.from_dict(c) for c in corpus_tokenised if c["name"] == self.dataset_name][0]
+            logger.info(
+                f"Converting corpus_parsed list of dict to a NERCorpus object which only holds the {self.dataset_name} "
+                f"dataset."
+            )
+            corpus = [
+                NERCorpus.from_dict(c)
+                for c in corpus_tokenised
+                if c["name"].replace("-", "") == self.dataset_name.replace("-", "")
+            ][0]
             entity_separator_token = corpus[0].entity_separator_token
             type_content_separator_token = corpus[0].type_content_separator_token
         else:
@@ -308,14 +327,25 @@ class NERTraining(Task):
 
         batch_collator = NERBatchCollator(pad_token_id=pad_token_id)
         datasets = self._init_torch_datasets(corpus=corpus)
-        dataloaders = self._init_torch_dataloaders(datasets, batch_collator)
+        dataloaders = init_torch_dataloaders(
+            datasets=datasets, batch_collator=batch_collator, logger=logger, **self.training_params["data_loading"]
+        )
         loggers = self._init_model_loggers()
-        callbacks = self._init_model_callbacks()
-
-        if self.training_params.get("metrics", False):
-            evaluator = Evaluator.from_config(entity_set=corpus.entity_set, **self.training_params["metrics"])
+        if self.get_store_context():
+            callbacks = init_model_callbacks(
+                run_dir=self.get_store_context().run_dir,
+                gpu_scaling=self.gpu_scaling,
+                monitor_var=self.training_params["callbacks"].monitor_var,
+                save_top_k=self.training_params["callbacks"].save_top_k,
+                monitor_var_mode=self.training_params["callbacks"].monitor_var_mode,
+                checkpointing_time_interval=self.checkpointing_time_interval,
+                apply_early_stopping=self.training_params["callbacks"].apply_early_stopping,
+                is_subprocess=self.is_subprocess,
+                patience=self.training_params["callbacks"].patience,
+            )
         else:
-            evaluator = None
+            callbacks = init_model_callbacks()
+
         # entity_type_token_ids = tokeniser(text=sorted(list(corpus.entity_set)), add_special_tokens=False).input_ids
 
         if self.informed_generation:
@@ -436,6 +466,8 @@ class NERTraining(Task):
             model = GenerativeNERModelDeepSpeed(**init_model_parameter)
         else:
             raise ValueError()
+
+        model.load_state_dict(best_model["state_dict"])
 
         logger.info("Doing zero-shot evaluation on test set.")
         zero_shot_metrics = trainer.test(model=model, dataloaders=dataloaders["test"])

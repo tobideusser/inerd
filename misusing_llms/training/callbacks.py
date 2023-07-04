@@ -2,7 +2,6 @@ import os
 from datetime import timedelta
 from typing import List, Optional
 
-import torch
 from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint, LearningRateMonitor
 
 from misusing_llms.training import ProgressBar, ExceptionHandling
