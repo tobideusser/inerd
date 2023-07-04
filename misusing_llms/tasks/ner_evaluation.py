@@ -149,6 +149,12 @@ class NEREvaluation(Task):
         else:
             tokeniser = AutoTokenizer.from_pretrained(model_params["model_name"])
 
+        tokeniser.add_special_tokens(
+            {
+                "additional_special_tokens": [entity_separator_token, type_content_separator_token],
+            }
+        )
+
         if model_params["llama"]:
             tokeniser.add_special_tokens({"pad_token": "<|padding|>"})
             pad_token_id = tokeniser.pad_token_id
