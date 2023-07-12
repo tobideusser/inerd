@@ -336,7 +336,7 @@ class NERPreTraining(Task):
         elif "RedPajama" in self.model_params["model_name"]:
             pad_token_id = 1  # "<|padding|>" in GPT-NEOX
             tokeniser.pad_token_id = 1
-        elif "falcon" in self.model_params["model_name"]:
+        elif "falcon" in self.model_params["model_name"] or "gpt2" in self.model_params["model_name"]:
             tokeniser.add_special_tokens({"pad_token": "<|padding|>"})
             pad_token_id = tokeniser.pad_token_id
         elif tokeniser.pad_token_id is None:

@@ -317,7 +317,7 @@ class NERTraining(Task):
         elif "RedPajama" in self.model_params["model_name"]:
             pad_token_id = 1  # "<|padding|>" in GPT-NEOX
             tokeniser.pad_token_id = 1
-        elif "falcon" in self.model_params["model_name"]:
+        elif "falcon" in self.model_params["model_name"] or "gpt2" in self.model_params["model_name"]:
             tokeniser.add_special_tokens({"pad_token": "<|padding|>"})
             pad_token_id = tokeniser.pad_token_id
         elif tokeniser.pad_token_id is None:
@@ -357,16 +357,16 @@ class NERTraining(Task):
             )
             entity_type_tokens = sorted(list(corpus.entity_set))
 
-            vocab_size = tokeniser.vocab_size
-            if "bloom" in tokeniser.name_or_path:
-                logger.debug("'Bloom' tokeniser chosen, adding 200 to vocab size for logits processor.")
-                logger.debug("See: https://huggingface.co/bigscience/bloom-560m/discussions/43")
-                vocab_size += 200
-            elif "RedPajama" in tokeniser.name_or_path:
-                logger.debug("'RedPajama' tokeniser chosen, adding 178 to vocab size for logits processor.")
-                vocab_size += 178
-            elif self.model_params["llama"] or "falcon" in tokeniser.name_or_path:
-                vocab_size = len(tokeniser)
+            # vocab_size = tokeniser.vocab_size
+            # if "bloom" in tokeniser.name_or_path:
+            #     logger.debug("'Bloom' tokeniser chosen, adding 200 to vocab size for logits processor.")
+            #     logger.debug("See: https://huggingface.co/bigscience/bloom-560m/discussions/43")
+            #     vocab_size += 200
+            # elif "RedPajama" in tokeniser.name_or_path:
+            #     logger.debug("'RedPajama' tokeniser chosen, adding 178 to vocab size for logits processor.")
+            #     vocab_size += 178
+            # elif self.model_params["llama"] or "falcon" in tokeniser.name_or_path:
+            vocab_size = len(tokeniser)
 
             logits_processor.append(
                 InformedNERDecoderLogitsProcessor(

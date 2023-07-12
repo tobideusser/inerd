@@ -44,7 +44,7 @@ def init_model_callbacks(
                 save_last=True,
                 save_on_train_epoch_end=True,
                 save_top_k=-1,
-                save_weights_only=True,
+                # save_weights_only=True,
             )
         else:
             model_checkpoint = ModelCheckpoint(

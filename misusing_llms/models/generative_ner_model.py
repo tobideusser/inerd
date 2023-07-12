@@ -69,9 +69,9 @@ class GenerativeNERModel(pl.LightningModule):
                     cache_dir=hf_cache_dir,
                 )
 
-        if ("tiiuae/falcon" in self.model_name or model_params["llama"]) and self.model.lm_head.out_features != len(
-            tokeniser
-        ):
+        if (
+            "tiiuae/falcon" in self.model_name or "gpt2" in self.model_name or model_params["llama"]
+        ) and self.model.lm_head.out_features != len(tokeniser):
             self.model.resize_token_embeddings(len(tokeniser))
 
         if self.lora:
@@ -251,7 +251,7 @@ class GenerativeNERModel(pl.LightningModule):
     #     return model_output.loss
 
     def log_metrics(self, split: str):
-        if split == "test" and self.current_epoch == 0:
+        if split == "test" and self.global_step == 0:
             split = "zero-shot-test"
         metrics = self.compute_metrics()
         ner_micro_f1 = metrics["ner_micro_f1"]
