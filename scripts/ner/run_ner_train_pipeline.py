@@ -117,6 +117,9 @@ def main():
         elif dataset in ["few-nerd", "Few-NERD", "fewnerd", "FewNERD"]:
             dataset = "Few-NERD"
             config = yaml.safe_load(open(os.path.join(project_path, "scripts", "ner", "fewnerd_config.yaml"), "r"))
+        elif dataset in ["CoNLL++", "CoNLLpp", "conllpp"]:
+            dataset = "CoNLL++"
+            config = yaml.safe_load(open(os.path.join(project_path, "scripts", "ner", "conlpp_config.yaml"), "r"))
         else:
             raise ValueError(f"Dataset {dataset} not known.")
 
