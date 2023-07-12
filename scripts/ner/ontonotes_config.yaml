@@ -17,14 +17,6 @@ seed: &seed 3141
 
 Parsing:
   dataset:
-#    Species-800: null  # google drive down for this file?
-#    FiNER-ORD: [false, true, true, true, true, true, true]
-#    CoNLL++: [true, false, true, true, true, true, true]
-#    Few-NERD: [true, true, false, true, true, true, true]
-#    JNLPBA: [true, true, true, false, true, true, true]
-#    WNUT-17: [true, true, true, true, false, true, true]
-#    OntoNotes: [true, true, true, true, true, false, true]
-#    NCBI-disease: [true, true, true, true, true, true, false]
     FiNER-ORD: true
     CoNLL++: true
     Few-NERD: true
@@ -194,7 +186,7 @@ Training:
 
     trainer:
       max_epochs: 1
-      accumulate_grad_batches: 16 # [2, 4]  # 4
+      accumulate_grad_batches: 32 # [2, 4]  # 4
       gradient_clip_val: 1  # [1, 10]  # 10
       precision: 32
 #        precision: 16
@@ -215,7 +207,7 @@ Training:
 #          weights: null
 
     data_loading:
-      batch_size: 4
+      batch_size: 2
 #        drop_last: false
       combine_train_valid: true
       validate_on_test_set: true

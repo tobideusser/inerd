@@ -3,8 +3,8 @@ from typing import Optional, Dict
 
 from torch.utils.data import DataLoader
 
-from misusing_llms.training import GenerativeNERDataset, NERBatchCollator
-from misusing_llms.utils import is_debug
+from inerd.training import GenerativeNERDataset, NERBatchCollator
+from inerd.utils import is_debug
 
 
 def init_torch_dataloaders(

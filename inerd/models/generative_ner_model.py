@@ -16,8 +16,8 @@ from pytorch_lightning.utilities import rank_zero_only
 
 from transformers.generation import GenerationConfig, LogitsProcessorList, StoppingCriteriaList
 
-from misusing_llms.training import Optimiser, LearningRateScheduler
-from misusing_llms.utils import entity_string_to_entity_dataclass
+from inerd.training import Optimiser, LearningRateScheduler
+from inerd.utils import entity_string_to_entity_dataclass
 
 logger = logging.getLogger(__name__)
 

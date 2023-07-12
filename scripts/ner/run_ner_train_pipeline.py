@@ -9,14 +9,14 @@ from fluidml import Flow
 from fluidml.flow import TaskSpec
 from fluidml.visualization import visualize_graph_in_console
 
-from misusing_llms import project_path
-from misusing_llms.tasks import Parsing, Tokenisation, NERTraining, NEREvaluation, NERPreTraining
-from misusing_llms.utils.fluid_helper import (
+from inerd import project_path
+from inerd.tasks import Parsing, Tokenisation, NERTraining, NEREvaluation, NERPreTraining
+from inerd.utils.fluid_helper import (
     configure_logging,
     MyLocalFileStore,
     TaskResource,
 )
-from misusing_llms.utils import get_balanced_devices, is_debug
+from inerd.utils import get_balanced_devices, is_debug
 
 logger = logging.getLogger(__name__)
 

@@ -5,7 +5,8 @@
 #base_dir: "/cluster/data/experiments/misusing_llms/conll2003_debug"
 #base_dir: "/cluster/data/experiments/misusing_llms/conll2003_singlegpu"
 #base_dir: "/cluster/data/experiments/misusing_llms/conll2003_v2"
-base_dir: "/cluster/data/experiments/misusing_llms/pretraining"
+#base_dir: "/cluster/data/experiments/misusing_llms/pretraining"
+base_dir: "/cephfs/experiments/inerd"
 seed: &seed 3141
 
 ###########
@@ -52,6 +53,7 @@ Parsing:
 # "bigscience/bloom-7b1"
 # "facebook/opt-6.7b"
 # llama: "/cluster/models/llama_weights/huggingface_converted/7B"
+# llama: "/cephfs/llama_weights/huggingface_converted/7B"
 
 
 # models fitting on two 32gb GPUs with fsdp and cpu offloading:
@@ -70,7 +72,7 @@ Parsing:
 # "togethercomputer/RedPajama-INCITE-Base-7B-v0.1"
 
 Tokenisation:
-  tokeniser_name: &modelname "/cluster/models/llama_weights/huggingface_converted/7B"
+  tokeniser_name: &modelname "/cephfs/llama_weights/huggingface_converted/7B"
   llama: &llama true
   special_tokens: null
   combine_token: "<s>"
@@ -91,7 +93,7 @@ PreTraining:
       model_name: *modelname
       llama: *llama
       load_in_8bit: false
-      lora: false
+      lora: true
       lora_config:
         r: 8
         lora_alpha: 32
@@ -116,7 +118,7 @@ PreTraining:
 #        lr_warmup: 0.1
 
       trainer:
-        max_epochs: 3
+        max_epochs: 10
         accumulate_grad_batches: 4 # [2, 4]  # 4
         gradient_clip_val: 1  # [1, 10]  # 10
         precision: 32
@@ -199,7 +201,7 @@ Training:
 #          weights: null
 
       data_loading:
-        batch_size: 1
+        batch_size: 2
 #        drop_last: false
         combine_train_valid: true
         validate_on_test_set: true

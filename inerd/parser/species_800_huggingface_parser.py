@@ -3,11 +3,11 @@ from typing import Optional
 from datasets import load_dataset, DatasetDict
 from tqdm import tqdm
 
-from misusing_llms.data_classes import Sentence, NERCorpus
-from misusing_llms.parser import BaseParser
+from inerd.data_classes import Sentence, NERCorpus
+from inerd.parser import BaseParser
 
 
-class NCBIDiseaseHuggingFaceParser(BaseParser):
+class Species800HuggingFaceParser(BaseParser):
     def __init__(
         self,
         entity_separator_token: str,
@@ -15,7 +15,6 @@ class NCBIDiseaseHuggingFaceParser(BaseParser):
         type_mapping: bool = False,
         debug_size: Optional[int] = None,
         dataset_name: Optional[str] = None,
-        cache_dir: Optional[str] = None,
     ):
         if type_mapping:
             ValueError("No type_mapping implemented for NCBI-disease.")
@@ -24,11 +23,10 @@ class NCBIDiseaseHuggingFaceParser(BaseParser):
             debug_size=debug_size,
             entity_separator_token=entity_separator_token,
             type_content_separator_token=type_content_separator_token,
-            cache_dir=cache_dir,
         )
         self.dataset_name = dataset_name if dataset_name else "NCBI-disease"
 
-    def _parse_ncbi_split(self, dataset: DatasetDict, split_type: str):
+    def _parse_species800_split(self, dataset: DatasetDict, split_type: str):
         parsed = []
         i = 0
         for sentence in tqdm(
@@ -54,7 +52,7 @@ class NCBIDiseaseHuggingFaceParser(BaseParser):
         return parsed
 
     def parse(self) -> NERCorpus:
-        dataset = load_dataset("ncbi_disease", cache_dir=self.cache_dir)
+        dataset = load_dataset("species_800")
         corpus = {"train": [], "validation": [], "test": []}
         entity_labels = dataset["train"].features["ner_tags"].feature.names
         self.entity_tag_to_label = {i: entity_label for i, entity_label in enumerate(entity_labels)}
@@ -64,7 +62,7 @@ class NCBIDiseaseHuggingFaceParser(BaseParser):
                     if kk in v:
                         self.entity_tag_to_label[k] = self.entity_tag_to_label[k].replace(kk, vv)
         for split_type in ["train", "validation", "test"]:
-            corpus[split_type] = self._parse_ncbi_split(dataset=dataset, split_type=split_type)
+            corpus[split_type] = self._parse_species800_split(dataset=dataset, split_type=split_type)
 
         corpus_parsed = NERCorpus(
             train=corpus["train"],

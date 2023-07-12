@@ -2,7 +2,7 @@ from typing import Tuple, Dict, Any
 
 import torch
 
-from misusing_llms.data_classes import Sentence
+from inerd.data_classes import Sentence
 
 
 class NERBatchCollator:

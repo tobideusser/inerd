@@ -2,7 +2,7 @@ from typing import List
 
 from torch.utils.data import Dataset
 
-from misusing_llms.data_classes import Sentence
+from inerd.data_classes import Sentence
 
 
 class GenerativeNERDataset(Dataset):

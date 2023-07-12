@@ -3,36 +3,39 @@ from typing import Optional
 from datasets import load_dataset, DatasetDict
 from tqdm import tqdm
 
-from misusing_llms.data_classes import Sentence, NERCorpus
-from misusing_llms.parser import BaseParser
+from inerd.data_classes import Sentence, NERCorpus
+from inerd.parser import BaseParser
 
 
-class Species800HuggingFaceParser(BaseParser):
+class CoNLLPlusPlusHuggingFaceParser(BaseParser):
     def __init__(
         self,
         entity_separator_token: str,
         type_content_separator_token: str,
-        type_mapping: bool = False,
+        type_mapping: bool = True,
         debug_size: Optional[int] = None,
         dataset_name: Optional[str] = None,
+        cache_dir: Optional[str] = None,
     ):
         if type_mapping:
-            ValueError("No type_mapping implemented for NCBI-disease.")
+            type_mapping = {"PER": "Person", "LOC": "Location", "ORG": "Organisation", "MISC": "Miscellaneous"}
+        else:
+            type_mapping = None
         super().__init__(
-            type_mapping=None,
+            type_mapping=type_mapping,
             debug_size=debug_size,
             entity_separator_token=entity_separator_token,
             type_content_separator_token=type_content_separator_token,
+            cache_dir=cache_dir,
         )
-        self.dataset_name = dataset_name if dataset_name else "NCBI-disease"
+        self.dataset_name = dataset_name if dataset_name else "CoNLL++"
 
-    def _parse_species800_split(self, dataset: DatasetDict, split_type: str):
+    def _parse_conlpp_split(self, dataset: DatasetDict, split_type: str):
         parsed = []
-        i = 0
-        for sentence in tqdm(
-            dataset[split_type],
+        for i, sentence in tqdm(
+            enumerate(dataset[split_type]),
             desc=f"Parsing {split_type}",
-            total=len(dataset[split_type]),
+            total=self.debug_size if self.debug_size else len(dataset[split_type]),
         ):
             entities = self._entity_tags_to_entity_dict(entity_tags=sentence["ner_tags"], words=sentence["tokens"])
             parsed.append(
@@ -46,24 +49,32 @@ class Species800HuggingFaceParser(BaseParser):
                     type_content_separator_token=self.type_content_separator_token,
                 )
             )
-            i += 1
-            if self.debug_size and i >= self.debug_size:
+            if self.debug_size and i >= self.debug_size - 1:
                 return parsed
         return parsed
 
     def parse(self) -> NERCorpus:
-        dataset = load_dataset("species_800")
+        dataset = load_dataset("conllpp", cache_dir=self.cache_dir)
         corpus = {"train": [], "validation": [], "test": []}
-        entity_labels = dataset["train"].features["ner_tags"].feature.names
-        self.entity_tag_to_label = {i: entity_label for i, entity_label in enumerate(entity_labels)}
+        # source: https://huggingface.co/datasets/conll2003
+        self.entity_tag_to_label = {
+            0: "O",
+            1: "B-PER",
+            2: "I-PER",
+            3: "B-ORG",
+            4: "I-ORG",
+            5: "B-LOC",
+            6: "I-LOC",
+            7: "B-MISC",
+            8: "I-MISC",
+        }
         if self.type_mapping is not None:
             for k, v in self.entity_tag_to_label.items():
                 for kk, vv in self.type_mapping.items():
                     if kk in v:
                         self.entity_tag_to_label[k] = self.entity_tag_to_label[k].replace(kk, vv)
         for split_type in ["train", "validation", "test"]:
-            corpus[split_type] = self._parse_species800_split(dataset=dataset, split_type=split_type)
-
+            corpus[split_type] = self._parse_conlpp_split(dataset=dataset, split_type=split_type)
         corpus_parsed = NERCorpus(
             train=corpus["train"],
             validation=corpus["validation"],

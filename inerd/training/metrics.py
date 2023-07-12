@@ -5,8 +5,8 @@ from typing import Dict, Any, List, Union, Set
 import numpy as np
 from torchmetrics import BLEUScore
 
-from misusing_llms.data_classes import Entity
-from misusing_llms.utils import entity_string_to_entity_dataclass
+from inerd.data_classes import Entity
+from inerd.utils import entity_string_to_entity_dataclass
 
 
 def compute_metrics(eval_pred):

@@ -1,7 +1,7 @@
 from setuptools import setup, find_packages
 
 setup(
-    name="misusing-llms",
+    name="inerd",
     version="0.1",
     author="Tobias Deusser",
     packages=find_packages(),

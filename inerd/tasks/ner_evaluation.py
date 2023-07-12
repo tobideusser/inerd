@@ -9,16 +9,16 @@ from pytorch_lightning.loggers import WandbLogger, CSVLogger
 from pytorch_lightning.strategies import FSDPStrategy, DeepSpeedStrategy
 from transformers import AutoTokenizer, LogitsProcessorList, LlamaTokenizer
 
-from misusing_llms.data_classes import NERCorpus
-from misusing_llms.models import GenerativeNERModel, GenerativeNERModelFSDP, GenerativeNERModelDeepSpeed
-from misusing_llms.training import (
+from inerd.data_classes import NERCorpus
+from inerd.models import GenerativeNERModel, GenerativeNERModelFSDP, GenerativeNERModelDeepSpeed
+from inerd.training import (
     NERBatchCollator,
     GenerativeNERDataset,
     ProgressBar,
     FluidmlCheckpointIO,
     InformedNERDecoderLogitsProcessor,
 )
-from misusing_llms.training.dataloader import init_torch_dataloaders
+from inerd.training.dataloader import init_torch_dataloaders
 
 logger = logging.getLogger(__name__)
 

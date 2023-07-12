@@ -1,7 +1,7 @@
 import inspect
 from typing import Dict, List, Any, Set
 
-from misusing_llms.training.metrics import Metric
+from inerd.training.metrics import Metric
 
 
 class Evaluator:

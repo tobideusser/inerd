@@ -8,7 +8,7 @@ from typing import List, Optional, Union, Dict, Any
 import numpy as np
 import torch
 
-from misusing_llms.data_classes import Entity
+from inerd.data_classes import Entity
 
 _SEED: Optional[int] = None
 _DEVICE: Optional[torch.device] = None

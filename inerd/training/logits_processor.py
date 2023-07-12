@@ -6,7 +6,7 @@ import torch
 from torch import LongTensor, FloatTensor, BoolTensor
 from transformers import LogitsProcessor, PreTrainedTokenizer
 
-from misusing_llms.utils import rindex
+from inerd.utils import rindex
 
 
 logger = logging.getLogger(__name__)

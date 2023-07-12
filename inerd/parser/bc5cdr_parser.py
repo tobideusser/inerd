@@ -2,8 +2,8 @@ import os
 import xml.etree.ElementTree as Et
 from typing import Optional, Dict
 
-from misusing_llms.data_classes import Sentence, NERCorpus, Entity
-from misusing_llms.parser import BaseParser
+from inerd.data_classes import Sentence, NERCorpus, Entity
+from inerd.parser import BaseParser
 
 
 class BC5CDRParser(BaseParser):

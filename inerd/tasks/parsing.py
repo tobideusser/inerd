@@ -4,8 +4,8 @@ from typing import Optional, Dict, Union
 
 from fluidml import Task
 
-from misusing_llms.data_classes import NERCorpus
-from misusing_llms.parser import BaseParser
+from inerd.data_classes import NERCorpus
+from inerd.parser import BaseParser
 
 logger = logging.getLogger(__name__)
 

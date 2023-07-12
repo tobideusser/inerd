@@ -5,8 +5,8 @@ from fluidml import Task
 from tqdm import tqdm
 from transformers import AutoTokenizer, LlamaTokenizer
 
-from misusing_llms.data_classes import NERCorpus
-from misusing_llms.utils.utils import set_seed_number, set_seeds
+from inerd.data_classes import NERCorpus
+from inerd.utils.utils import set_seed_number, set_seeds
 
 logger = logging.getLogger(__name__)
 

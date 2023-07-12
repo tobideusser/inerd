@@ -3,7 +3,7 @@ from importlib import import_module
 from inspect import signature
 from typing import List, Dict, Optional
 
-from misusing_llms.data_classes import Entity
+from inerd.data_classes import Entity
 
 
 class BaseParser(ABC):

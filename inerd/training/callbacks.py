@@ -4,7 +4,7 @@ from typing import List, Optional
 
 from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint, LearningRateMonitor
 
-from misusing_llms.training import ProgressBar, ExceptionHandling
+from inerd.training import ProgressBar, ExceptionHandling
 
 
 def init_model_callbacks(

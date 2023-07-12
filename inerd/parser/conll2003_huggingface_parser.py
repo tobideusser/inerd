@@ -3,8 +3,8 @@ from typing import Optional, Dict
 from datasets import load_dataset
 from tqdm import tqdm
 
-from misusing_llms.data_classes import Sentence, NERCorpus
-from misusing_llms.parser import BaseParser
+from inerd.data_classes import Sentence, NERCorpus
+from inerd.parser import BaseParser
 
 
 class CoNLL2003HuggingFaceParser(BaseParser):

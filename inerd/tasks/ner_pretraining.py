@@ -11,17 +11,17 @@ from pytorch_lightning.loggers import TensorBoardLogger, WandbLogger, CSVLogger
 from pytorch_lightning.strategies import FSDPStrategy, DeepSpeedStrategy
 from transformers import AutoTokenizer, LlamaTokenizer
 
-from misusing_llms.data_classes import NERCorpus
-from misusing_llms.models import GenerativeNERModel, GenerativeNERModelFSDP, GenerativeNERModelDeepSpeed
-from misusing_llms.training import (
+from inerd.data_classes import NERCorpus
+from inerd.models import GenerativeNERModel, GenerativeNERModelFSDP, GenerativeNERModelDeepSpeed
+from inerd.training import (
     NERBatchCollator,
     GenerativeNERDataset,
     FluidmlCheckpointIO,
 )
-from misusing_llms.training.callbacks import init_model_callbacks
-from misusing_llms.training.dataloader import init_torch_dataloaders
-from misusing_llms.utils import set_seeds
-from misusing_llms.utils.fluid_helper import log_to_file
+from inerd.training.callbacks import init_model_callbacks
+from inerd.training.dataloader import init_torch_dataloaders
+from inerd.utils import set_seeds
+from inerd.utils.fluid_helper import log_to_file
 
 logger = logging.getLogger(__name__)
 
