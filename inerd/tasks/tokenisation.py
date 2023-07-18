@@ -39,7 +39,6 @@ class Tokenisation(Task):
             self.tokeniser = AutoTokenizer.from_pretrained(self.tokeniser_name)
 
     def _tokenise_corpus(self, corpus: NERCorpus) -> NERCorpus:
-
         for sentence in tqdm(corpus.sentences, total=len(corpus)):
             if self.add_leading_space:
                 prompt_tokens = " " + sentence.content + " " + self.combine_token
@@ -78,11 +77,18 @@ class Tokenisation(Task):
             entity_separator_token = corpus[0].entity_separator_token
             type_content_separator_token = corpus[0].type_content_separator_token
 
-        self.tokeniser.add_special_tokens(
-            {
-                "additional_special_tokens": [entity_separator_token, type_content_separator_token],
-            }
-        )
+        if entity_separator_token not in self.tokeniser.get_vocab():
+            self.tokeniser.add_special_tokens(
+                {
+                    "additional_special_tokens": [entity_separator_token],
+                }
+            )
+        if type_content_separator_token not in self.tokeniser.get_vocab():
+            self.tokeniser.add_special_tokens(
+                {
+                    "additional_special_tokens": [type_content_separator_token],
+                }
+            )
 
         logger.info("Tokenise corpus...")
         if isinstance(corpus, list):

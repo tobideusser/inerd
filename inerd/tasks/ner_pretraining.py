@@ -271,7 +271,6 @@ class NERPreTraining(Task):
 
     @log_to_file
     def run(self, corpus_tokenised: NERCorpus):
-
         if isinstance(corpus_tokenised, Dict):
             logger.info("Converting corpus_tokenised dict to NERCorpus object.")
             corpus = NERCorpus.from_dict(corpus_tokenised)
@@ -309,26 +308,33 @@ class NERPreTraining(Task):
         # this disables the warning that appears when using bloom, opt, and RedPajama (and others?)
         # see here:
         #   https://stackoverflow.com/questions/62691279/how-to-disable-tokenizers-parallelism-true-false-warning
-        if (
-            "bloom" in self.model_params["model_name"]
-            or "RedPajama" in self.model_params["model_name"]
-            or "opt" in self.model_params["model_name"]
-            or "gpt-2" in self.model_params["model_name"]
-            or "falcon" in self.model_params["model_name"]
-            or self.model_params["llama"]
-        ):
-            os.environ["TOKENIZERS_PARALLELISM"] = "false"
+        # if (
+        #     "bloom" in self.model_params["model_name"]
+        #     or "RedPajama" in self.model_params["model_name"]
+        #     or "opt" in self.model_params["model_name"]
+        #     or "gpt-2" in self.model_params["model_name"]
+        #     or "falcon" in self.model_params["model_name"]
+        #     or self.model_params["llama"]
+        # ):
+        os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
         if self.model_params["llama"]:
             tokeniser = LlamaTokenizer.from_pretrained(self.model_params["model_name"])
         else:
             tokeniser = AutoTokenizer.from_pretrained(self.model_params["model_name"])
 
-        tokeniser.add_special_tokens(
-            {
-                "additional_special_tokens": [entity_separator_token, type_content_separator_token],
-            }
-        )
+        if entity_separator_token not in tokeniser.get_vocab():
+            tokeniser.add_special_tokens(
+                {
+                    "additional_special_tokens": [entity_separator_token],
+                }
+            )
+        if type_content_separator_token not in tokeniser.get_vocab():
+            tokeniser.add_special_tokens(
+                {
+                    "additional_special_tokens": [type_content_separator_token],
+                }
+            )
 
         if self.model_params["llama"]:
             tokeniser.add_special_tokens({"pad_token": "<PAD>"})
@@ -336,7 +342,11 @@ class NERPreTraining(Task):
         elif "RedPajama" in self.model_params["model_name"]:
             pad_token_id = 1  # "<|padding|>" in GPT-NEOX
             tokeniser.pad_token_id = 1
-        elif "falcon" in self.model_params["model_name"] or "gpt2" in self.model_params["model_name"]:
+        elif (
+            "falcon" in self.model_params["model_name"]
+            or "gpt2" in self.model_params["model_name"]
+            or "stanford-crfm/BioMedLM" in self.model_params["model_name"]
+        ):
             tokeniser.add_special_tokens({"pad_token": "<|padding|>"})
             pad_token_id = tokeniser.pad_token_id
         elif tokeniser.pad_token_id is None:

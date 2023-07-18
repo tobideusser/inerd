@@ -39,6 +39,7 @@ class NERTraining(Task):
         warm_start: bool = False,
         wandb_logging: bool = False,
         csv_logging: bool = True,
+        pre_training: bool = True,
         checkpointing_time_interval: Optional[float] = None,
     ):
         super().__init__()
@@ -56,6 +57,8 @@ class NERTraining(Task):
         )
 
         self.combine_train_valid = self.training_params["data_loading"].pop("combine_train_valid", False)
+
+        self.pre_training = pre_training
 
         self.wandb_logging = wandb_logging
         self.csv_logging = csv_logging
@@ -179,6 +182,7 @@ class NERTraining(Task):
                     model_name = "llama-?B"
             else:
                 model_name = self.model_params["model_name"]
+            logger.info(f"Using model {model_name}.")
             hyperparameter_to_be_logged = {
                 "informed_generation": self.informed_generation,
                 "batch_size": self.training_params["data_loading"]["batch_size"],
@@ -197,6 +201,7 @@ class NERTraining(Task):
                 if self.training_params["callbacks"]["apply_early_stopping"]
                 else "false",
                 "dataset": self.dataset_name,
+                "pre_training": self.pre_training,
             }
             for train_logger in loggers:
                 if isinstance(train_logger, pl.loggers.wandb.WandbLogger):
@@ -251,8 +256,7 @@ class NERTraining(Task):
     #     return callbacks
 
     @log_to_file
-    def run(self, corpus_tokenised: NERCorpus, best_model: Dict):
-
+    def run(self, corpus_tokenised: NERCorpus, best_model: Optional[Dict] = None):
         if isinstance(corpus_tokenised, Dict):
             logger.info("Converting corpus_tokenised dict to NERCorpus object.")
             corpus = NERCorpus.from_dict(corpus_tokenised)
@@ -290,26 +294,33 @@ class NERTraining(Task):
         # this disables the warning that appears when using bloom, opt, and RedPajama (and others?)
         # see here:
         #   https://stackoverflow.com/questions/62691279/how-to-disable-tokenizers-parallelism-true-false-warning
-        if (
-            "bloom" in self.model_params["model_name"]
-            or "RedPajama" in self.model_params["model_name"]
-            or "opt" in self.model_params["model_name"]
-            or "gpt-2" in self.model_params["model_name"]
-            or "falcon" in self.model_params["model_name"]
-            or self.model_params["llama"]
-        ):
-            os.environ["TOKENIZERS_PARALLELISM"] = "false"
+        # if (
+        #     "bloom" in self.model_params["model_name"]
+        #     or "RedPajama" in self.model_params["model_name"]
+        #     or "opt" in self.model_params["model_name"]
+        #     or "gpt-2" in self.model_params["model_name"]
+        #     or "falcon" in self.model_params["model_name"]
+        #     or self.model_params["llama"]
+        # ):
+        os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
         if self.model_params["llama"]:
             tokeniser = LlamaTokenizer.from_pretrained(self.model_params["model_name"])
         else:
             tokeniser = AutoTokenizer.from_pretrained(self.model_params["model_name"])
 
-        tokeniser.add_special_tokens(
-            {
-                "additional_special_tokens": [entity_separator_token, type_content_separator_token],
-            }
-        )
+        if entity_separator_token not in tokeniser.get_vocab():
+            tokeniser.add_special_tokens(
+                {
+                    "additional_special_tokens": [entity_separator_token],
+                }
+            )
+        if type_content_separator_token not in tokeniser.get_vocab():
+            tokeniser.add_special_tokens(
+                {
+                    "additional_special_tokens": [type_content_separator_token],
+                }
+            )
 
         if self.model_params["llama"]:
             tokeniser.add_special_tokens({"pad_token": "<PAD>"})
@@ -317,7 +328,11 @@ class NERTraining(Task):
         elif "RedPajama" in self.model_params["model_name"]:
             pad_token_id = 1  # "<|padding|>" in GPT-NEOX
             tokeniser.pad_token_id = 1
-        elif "falcon" in self.model_params["model_name"] or "gpt2" in self.model_params["model_name"]:
+        elif (
+            "falcon" in self.model_params["model_name"]
+            or "gpt2" in self.model_params["model_name"]
+            or "stanford-crfm/BioMedLM" in self.model_params["model_name"]
+        ):
             tokeniser.add_special_tokens({"pad_token": "<|padding|>"})
             pad_token_id = tokeniser.pad_token_id
         elif tokeniser.pad_token_id is None:
@@ -348,6 +363,7 @@ class NERTraining(Task):
 
         # entity_type_token_ids = tokeniser(text=sorted(list(corpus.entity_set)), add_special_tokens=False).input_ids
 
+        vocab_size = len(tokeniser)
         if self.informed_generation:
             logits_processor = LogitsProcessorList()
             combine_token = (
@@ -366,7 +382,10 @@ class NERTraining(Task):
             #     logger.debug("'RedPajama' tokeniser chosen, adding 178 to vocab size for logits processor.")
             #     vocab_size += 178
             # elif self.model_params["llama"] or "falcon" in tokeniser.name_or_path:
-            vocab_size = len(tokeniser)
+
+            if "RedPajama" in tokeniser.name_or_path:
+                logger.debug("'RedPajama' tokeniser chosen, fixing vocab_size to 50432.")
+                vocab_size = 50432
 
             logits_processor.append(
                 InformedNERDecoderLogitsProcessor(
@@ -456,6 +475,9 @@ class NERTraining(Task):
             "pad_token_id": pad_token_id,
             "type_content_separator_token": type_content_separator_token,
             "entity_separator_token": entity_separator_token,
+            "do_zero_shot": True,
+            "hf_cache_dir": os.path.join(self.results_store.base_dir, ".hfcache"),
+            "vocab_size": vocab_size,
         }
 
         if strategy == "auto":
@@ -467,12 +489,13 @@ class NERTraining(Task):
         else:
             raise ValueError()
 
-        model.load_state_dict(best_model["state_dict"])
+        if self.pre_training:
+            model.load_state_dict(best_model["state_dict"])
 
-        logger.info("Doing zero-shot evaluation on test set.")
-        zero_shot_metrics = trainer.test(model=model, dataloaders=dataloaders["test"])
-        logger.info("Zero-shot metrics:")
-        logger.info(zero_shot_metrics)
+            logger.info("Doing zero-shot evaluation on test set.")
+            zero_shot_metrics = trainer.test(model=model, dataloaders=dataloaders["test"])
+            logger.info("Zero-shot metrics:")
+            logger.info(zero_shot_metrics)
 
         trainer.fit(
             model=model,

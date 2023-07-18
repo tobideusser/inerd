@@ -5,8 +5,8 @@
 #base_dir: "/cluster/data/experiments/misusing_llms/conll2003_debug"
 #base_dir: "/cluster/data/experiments/misusing_llms/conll2003_singlegpu"
 #base_dir: "/cluster/data/experiments/misusing_llms/conll2003_v2"
-#base_dir: "/cephfs/experiments/inerd"  # lamarr
-base_dir: "/mnt/cephfs/users/deusser/experiments/inerd"  # lamarr
+base_dir: "/cephfs/experiments/inerd"  # lamarr
+#base_dir: "/mnt/cephfs/users/deusser/experiments/inerd"  # lamarr
 #base_dir: "/cluster/data/experiments/misusing_llms/pretraining" # wznbm
 #base_dir : "/root/experiments/inerd"
 seed: &seed 3141
@@ -22,7 +22,7 @@ Parsing:
     Few-NERD: true
     JNLPBA: true
     WNUT-17: true
-    OntoNotes: false
+    OntoNotes: true
     NCBI-disease: true
 #      BC5CDR: "/cluster/data/ner/bc5cdr"
 #    CoNLL-2003: false
@@ -74,13 +74,15 @@ Parsing:
 
 Tokenisation:
 #  tokeniser_name: &modelname "tiiuae/falcon-7b"
-#  tokeniser_name: &modelname "/cephfs/llama_weights/huggingface_converted/7B"
+#  tokeniser_name: &modelname "gpt2-xl"
+  tokeniser_name: &modelname "/cephfs/llama_weights/huggingface_converted/13B"
 #  tokeniser_name: &modelname "/root/llama_weights/huggingface_converted/7B"
-  tokeniser_name: &modelname "/mnt/cephfs/users/deusser/llama_weights/huggingface_converted/7B"
+#  tokeniser_name: &modelname "/mnt/cephfs/users/deusser/llama_weights/huggingface_converted/7B"
 #  tokeniser_name: &modelname "/cluster/public/llama_weights/huggingface_converted/7B"
 #  tokeniser_name: &modelname "/mnt/cephfs/users/deusser/llama_weights/huggingface_converted/13B"
   llama: &llama true
   special_tokens: null
+#  combine_token: "\n" # "<s>"
   combine_token: "<s>"
   add_leading_space: false
 
@@ -185,8 +187,8 @@ Training:
 #        lr_warmup: 0.1
 
     trainer:
-      max_epochs: 1
-      accumulate_grad_batches: 32 # [2, 4]  # 4
+      max_epochs: 15
+      accumulate_grad_batches: 64 # [2, 4]  # 4
       gradient_clip_val: 1  # [1, 10]  # 10
       precision: 32
 #        precision: 16
@@ -207,7 +209,7 @@ Training:
 #          weights: null
 
     data_loading:
-      batch_size: 2
+      batch_size: 1
 #        drop_last: false
       combine_train_valid: true
       validate_on_test_set: true

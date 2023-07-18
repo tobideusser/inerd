@@ -8,17 +8,18 @@ from inerd.data_classes import Entity
 
 class BaseParser(ABC):
     PARSER = {
-        "conll2003": "misusing_llms.parser.conll2003_huggingface_parser.CoNLL2003HuggingFaceParser",
-        "CoNLL-2003": "misusing_llms.parser.conll2003_huggingface_parser.CoNLL2003HuggingFaceParser",
-        "BC5CDR": "misusing_llms.parser.bc5cdr_parser.BC5CDRParser",
-        "OntoNotes": "misusing_llms.parser.ontonotes_huggingface_parser.OntoNotesHuggingFaceParser",
-        "NCBI-disease": "misusing_llms.parser.ncbi_disease_huggingface_parser.NCBIDiseaseHuggingFaceParser",
-        "WNUT-17": "misusing_llms.parser.wnut17_huggingface_parser.WNUT17HuggingFaceParser",
-        "JNLPBA": "misusing_llms.parser.jnlpba_huggingface_parser.JNLPBAHuggingFaceParser",
-        "Few-NERD": "misusing_llms.parser.few_nerd_huggingface_parser.FewNERDHuggingFaceParser",
-        "CoNLL++": "misusing_llms.parser.conllpp_huggingface_parser.CoNLLPlusPlusHuggingFaceParser",
-        "FiNER-ORD": "misusing_llms.parser.finer_ord_huggingface_parser.FiNERORDHuggingFaceParser",
-        # "Species-800": "misusing_llms.parser.species_800_huggingface_parser.Species800HuggingFaceParser",
+        "conll2003": "inerd.parser.conll2003_huggingface_parser.CoNLL2003HuggingFaceParser",
+        "CoNLL-2003": "inerd.parser.conll2003_huggingface_parser.CoNLL2003HuggingFaceParser",
+        "CoNLL2003": "inerd.parser.conll2003_huggingface_parser.CoNLL2003HuggingFaceParser",
+        "BC5CDR": "inerd.parser.bc5cdr_parser.BC5CDRParser",
+        "OntoNotes": "inerd.parser.ontonotes_huggingface_parser.OntoNotesHuggingFaceParser",
+        "NCBI-disease": "inerd.parser.ncbi_disease_huggingface_parser.NCBIDiseaseHuggingFaceParser",
+        "WNUT-17": "inerd.parser.wnut17_huggingface_parser.WNUT17HuggingFaceParser",
+        "JNLPBA": "inerd.parser.jnlpba_huggingface_parser.JNLPBAHuggingFaceParser",
+        "Few-NERD": "inerd.parser.few_nerd_huggingface_parser.FewNERDHuggingFaceParser",
+        "CoNLL++": "inerd.parser.conllpp_huggingface_parser.CoNLLPlusPlusHuggingFaceParser",
+        "FiNER-ORD": "inerd.parser.finer_ord_huggingface_parser.FiNERORDHuggingFaceParser",
+        # "Species-800": "inerd.parser.species_800_huggingface_parser.Species800HuggingFaceParser",
     }
 
     def __init__(
@@ -62,7 +63,6 @@ class BaseParser(ABC):
         entities = []
 
         if tagging_type == "iob":
-
             for i, entity_tag in enumerate(entity_tags):
                 if entity_tag in self.begin_tags and not entity_found_flag:
                     entity = Entity(start=i, words=[words[i]], type_=self.entity_tag_to_label[entity_tag].split("-")[1])
@@ -89,7 +89,6 @@ class BaseParser(ABC):
                     entities.append(entity)
 
         elif tagging_type == "simple":
-
             for i, entity_tag in enumerate(entity_tags):
                 if entity_tag != self.outside_tag_id:
                     if not entity_found_flag:

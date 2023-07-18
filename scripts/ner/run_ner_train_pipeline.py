@@ -63,6 +63,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--deepspeed", action="store_true", help="Use deepspeed.")
     parser.add_argument("--fsdp", action="store_true", help="Use fsdp.")
     parser.add_argument("--pre-training", action="store_true", help="Execute only pre-training.")
+    parser.add_argument("--no-pre-training", action="store_true", help="Execute no pre-training.")
     parser.add_argument("--use-cuda", action="store_true", help="Use cuda.")
     parser.add_argument("--max-split-size", type=int, default=None, help="Max. split size for cuda processes.")
     parser.add_argument("--warm-start", action="store_true", help="Tries to warm start training.")
@@ -98,6 +99,10 @@ def main():
     args = parse_args()
 
     only_do_pre_training = args.pre_training
+    no_pre_training = args.no_pre_training
+
+    if only_do_pre_training and no_pre_training:
+        raise ValueError
 
     if args.config:
         config = yaml.safe_load(open(args.config, "r"))
@@ -107,7 +112,8 @@ def main():
         if only_do_pre_training:
             dataset = None
             config = yaml.safe_load(open(os.path.join(project_path, "scripts", "ner", "pretraining_config.yaml"), "r"))
-        elif dataset == "conll2003":
+        elif dataset in ["conll2003", "CoNLL2003", "conll03", "CoNLL-2003"]:
+            dataset = "CoNLL2003"
             config = yaml.safe_load(open(os.path.join(project_path, "scripts", "ner", "conll2003_config.yaml"), "r"))
         elif dataset == "bc5cdr":
             config = yaml.safe_load(open(os.path.join(project_path, "scripts", "ner", "bc5cdr_config.yaml"), "r"))
@@ -123,6 +129,15 @@ def main():
         elif dataset in ["NCBI-disease", "ncbidisease", "ncbi-disease"]:
             dataset = "NCBI-disease"
             config = yaml.safe_load(open(os.path.join(project_path, "scripts", "ner", "ncbidisease_config.yaml"), "r"))
+        elif dataset in ["WNUT-17", "wnut17", "wnut-17"]:
+            dataset = "WNUT-17"
+            config = yaml.safe_load(open(os.path.join(project_path, "scripts", "ner", "wnut17_config.yaml"), "r"))
+        elif dataset in ["FiNER-ORD", "FiNERORD", "finerord", "finer-ord"]:
+            dataset = "FiNER-ORD"
+            config = yaml.safe_load(open(os.path.join(project_path, "scripts", "ner", "finerord_config.yaml"), "r"))
+        elif dataset in ["JNLPBA", "jnlpba"]:
+            dataset = "JNLPBA"
+            config = yaml.safe_load(open(os.path.join(project_path, "scripts", "ner", "jnlpba_config.yaml"), "r"))
         else:
             raise ValueError(f"Dataset {dataset} not known.")
 
@@ -169,25 +184,26 @@ def main():
     # create task specs
     parsing = TaskSpec(task=Parsing, config=parsing_cfg, expand=gs_expansion_method, config_group_prefix="$")
     tokenisation = TaskSpec(task=Tokenisation, config=tokenisation_cfg)
-    pre_training = TaskSpec(
-        task=NERPreTraining,
-        config=pre_training_cfg,
-        expand=gs_expansion_method,
-        additional_kwargs={
-            "gpu_scaling": gpu_scaling,
-            "warm_start": warm_start,
-            "checkpointing_time_interval": checkpointing_time_interval.total_seconds()
-            if checkpointing_time_interval is not None
-            else None,
-        },
-    )
 
     # dependencies between tasks
     tokenisation.requires(parsing)
-    pre_training.requires(tokenisation)
+
+    if not no_pre_training:
+        pre_training = TaskSpec(
+            task=NERPreTraining,
+            config=pre_training_cfg,
+            expand=gs_expansion_method,
+            additional_kwargs={
+                "gpu_scaling": gpu_scaling,
+                "warm_start": warm_start,
+                "checkpointing_time_interval": checkpointing_time_interval.total_seconds()
+                if checkpointing_time_interval is not None
+                else None,
+            },
+        )
+        pre_training.requires(tokenisation)
 
     if not only_do_pre_training:
-
         training_cfg = config["Training"]
         if dataset is not None:
             training_cfg["dataset"] = dataset
@@ -200,6 +216,7 @@ def main():
             additional_kwargs={
                 "gpu_scaling": gpu_scaling,
                 "warm_start": warm_start,
+                "pre_training": not no_pre_training,
                 "checkpointing_time_interval": checkpointing_time_interval.total_seconds()
                 if checkpointing_time_interval is not None
                 else None,
@@ -207,50 +224,64 @@ def main():
         )
         evaluation = TaskSpec(task=NEREvaluation, config=evaluation_cfg, expand=gs_expansion_method)
 
-        if parsing_cfg["dataset"][dataset]:
-            training.requires(pre_training, tokenisation)
-            evaluation.requires(tokenisation, training)
-            tasks = [
-                parsing,
-                tokenisation,
-                pre_training,
-                training,
-                evaluation,
-            ]
-        else:
-            logger.info("Adding dataset specific parsing and tokenisation to pipeline.")
-            dataset_specific_parsing_cfg = deepcopy(parsing_cfg)
-            dataset_specific_tokenisation_cfg = deepcopy(tokenisation_cfg)
-            for dataset_name in dataset_specific_parsing_cfg["dataset"].keys():
-                if dataset_name == dataset:
-                    dataset_specific_parsing_cfg["dataset"][dataset_name] = True
-                else:
-                    dataset_specific_parsing_cfg["dataset"][dataset_name] = False
-            dataset_specific_parsing = TaskSpec(
-                task=Parsing,
-                config=dataset_specific_parsing_cfg,
-                expand=gs_expansion_method,
-                name="DatasetSpecificParsing",
-            )
-            dataset_specific_tokenisation = tokenisation = TaskSpec(
-                task=Tokenisation, config=dataset_specific_tokenisation_cfg, name="DatasetSpecificTokenisation"
-            )
-            dataset_specific_tokenisation.requires(dataset_specific_parsing)
-            training.requires(pre_training, dataset_specific_tokenisation)
-            evaluation.requires(dataset_specific_tokenisation, training)
+        if dataset in parsing_cfg["dataset"] and parsing_cfg["dataset"][dataset]:
+            if no_pre_training:
+                training.requires(tokenisation)
+                evaluation.requires(tokenisation, training)
+                tasks = [
+                    parsing,
+                    tokenisation,
+                    training,
+                    evaluation,
+                ]
 
-            tasks = [
-                parsing,
-                tokenisation,
-                pre_training,
-                dataset_specific_parsing,
-                dataset_specific_tokenisation,
-                training,
-                evaluation,
-            ]
+            else:
+                training.requires(pre_training, tokenisation)
+                evaluation.requires(tokenisation, training)
+                tasks = [
+                    parsing,
+                    tokenisation,
+                    pre_training,
+                    training,
+                    evaluation,
+                ]
+        else:
+            if no_pre_training:
+                raise ValueError("Parameter dataset not set to the dataset that should be considered!")
+            else:
+                logger.info("Adding dataset specific parsing and tokenisation to pipeline.")
+                dataset_specific_parsing_cfg = deepcopy(parsing_cfg)
+                dataset_specific_tokenisation_cfg = deepcopy(tokenisation_cfg)
+                dataset_specific_parsing_cfg["dataset"][dataset] = True
+                for dataset_name in dataset_specific_parsing_cfg["dataset"].keys():
+                    if dataset_name == dataset:
+                        dataset_specific_parsing_cfg["dataset"][dataset_name] = True
+                    else:
+                        dataset_specific_parsing_cfg["dataset"][dataset_name] = False
+                dataset_specific_parsing = TaskSpec(
+                    task=Parsing,
+                    config=dataset_specific_parsing_cfg,
+                    expand=gs_expansion_method,
+                    name="DatasetSpecificParsing",
+                )
+                dataset_specific_tokenisation = tokenisation = TaskSpec(
+                    task=Tokenisation, config=dataset_specific_tokenisation_cfg, name="DatasetSpecificTokenisation"
+                )
+                dataset_specific_tokenisation.requires(dataset_specific_parsing)
+                training.requires(pre_training, dataset_specific_tokenisation)
+                evaluation.requires(dataset_specific_tokenisation, training)
+
+                tasks = [
+                    parsing,
+                    tokenisation,
+                    pre_training,
+                    dataset_specific_parsing,
+                    dataset_specific_tokenisation,
+                    training,
+                    evaluation,
+                ]
 
     else:
-
         tasks = [
             parsing,
             tokenisation,

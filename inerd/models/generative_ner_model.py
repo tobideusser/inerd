@@ -41,6 +41,8 @@ class GenerativeNERModel(pl.LightningModule):
         # evaluator: Optional[Evaluator] = None,
         entity_set: Optional[Set[str]] = None,
         hf_cache_dir: Optional[str] = None,
+        do_zero_shot: bool = False,
+        vocab_size: Optional[int] = None,
     ):
         super().__init__()
         self.model_name = model_params["model_name"]
@@ -49,6 +51,9 @@ class GenerativeNERModel(pl.LightningModule):
         self.lora: bool = model_params["lora"]
         self.type_content_separator_token = type_content_separator_token
         self.entity_separator_token = entity_separator_token
+        self.vocab_size = vocab_size if vocab_size is not None else len(tokeniser)
+
+        self.do_zero_shot = do_zero_shot
 
         trust_remote_code = "tiiuae/falcon" in self.model_name
         if self.load_in_8bit:
@@ -69,10 +74,14 @@ class GenerativeNERModel(pl.LightningModule):
                     cache_dir=hf_cache_dir,
                 )
 
-        if (
-            "tiiuae/falcon" in self.model_name or "gpt2" in self.model_name or model_params["llama"]
-        ) and self.model.lm_head.out_features != len(tokeniser):
-            self.model.resize_token_embeddings(len(tokeniser))
+        # if (
+        #     "tiiuae/falcon" in self.model_name
+        #     or "gpt2" in self.model_name
+        #     or model_params["llama"]
+        #     or "stanford-crfm/BioMedLM" in self.model_name
+        #     or "RedPajama" in self.model_name
+        # ) and self.model.lm_head.out_features != len(tokeniser):
+        self.model.resize_token_embeddings(vocab_size)
 
         if self.lora:
             self.lora_config = model_params["lora_config"]
@@ -199,7 +208,6 @@ class GenerativeNERModel(pl.LightningModule):
         self.entity_strings_ground_truth.extend(outputs["entity_string"])
 
     def on_validation_epoch_end(self) -> None:
-
         # compute and log metrics
         # metrics = self.evaluator.compute(reset=True)
         self.log_metrics(split="valid")
@@ -251,7 +259,7 @@ class GenerativeNERModel(pl.LightningModule):
     #     return model_output.loss
 
     def log_metrics(self, split: str):
-        if split == "test" and self.global_step == 0:
+        if split == "test" and self.global_step == 0 and self.do_zero_shot:
             split = "zero-shot-test"
         metrics = self.compute_metrics()
         ner_micro_f1 = metrics["ner_micro_f1"]

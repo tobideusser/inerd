@@ -105,7 +105,6 @@ class NEREvaluation(Task):
     #     return dataloaders
 
     def run(self, best_model: Dict, corpus_tokenised: NERCorpus):
-
         model_params = deepcopy(self.unique_config["NERTraining"]["model_params"])
         training_params = deepcopy(self.unique_config["NERTraining"]["training_params"])
         generation_params = deepcopy(self.unique_config["NERTraining"]["generation_params"])
@@ -135,25 +134,32 @@ class NEREvaluation(Task):
             entity_separator_token = corpus[0].entity_separator_token
             type_content_separator_token = corpus[0].type_content_separator_token
 
-        if (
-            "bloom" in model_params["model_name"]
-            or "RedPajama" in model_params["model_name"]
-            or "opt" in model_params["model_name"]
-            or "gpt-2" in model_params["model_name"]
-            or model_params["llama"]
-        ):
-            os.environ["TOKENIZERS_PARALLELISM"] = "false"
+        # if (
+        #     "bloom" in model_params["model_name"]
+        #     or "RedPajama" in model_params["model_name"]
+        #     or "opt" in model_params["model_name"]
+        #     or "gpt-2" in model_params["model_name"]
+        #     or model_params["llama"]
+        # ):
+        os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
         if model_params["llama"]:
             tokeniser = LlamaTokenizer.from_pretrained(model_params["model_name"])
         else:
             tokeniser = AutoTokenizer.from_pretrained(model_params["model_name"])
 
-        tokeniser.add_special_tokens(
-            {
-                "additional_special_tokens": [entity_separator_token, type_content_separator_token],
-            }
-        )
+        if entity_separator_token not in tokeniser.get_vocab():
+            tokeniser.add_special_tokens(
+                {
+                    "additional_special_tokens": [entity_separator_token],
+                }
+            )
+        if type_content_separator_token not in tokeniser.get_vocab():
+            tokeniser.add_special_tokens(
+                {
+                    "additional_special_tokens": [type_content_separator_token],
+                }
+            )
 
         if model_params["llama"]:
             tokeniser.add_special_tokens({"pad_token": "<|padding|>"})
@@ -161,7 +167,11 @@ class NEREvaluation(Task):
         elif "RedPajama" in model_params["model_name"]:
             pad_token_id = 1  # "<|padding|>" in GPT-NEOX
             tokeniser.pad_token_id = 1
-        elif "falcon" in model_params["model_name"] or "gpt2" in model_params["model_name"]:
+        elif (
+            "falcon" in model_params["model_name"]
+            or "gpt2" in model_params["model_name"]
+            or "stanford-crfm/BioMedLM" in model_params["model_name"]
+        ):
             tokeniser.add_special_tokens({"pad_token": "<|padding|>"})
             pad_token_id = tokeniser.pad_token_id
         elif tokeniser.pad_token_id is None:
@@ -200,7 +210,7 @@ class NEREvaluation(Task):
             elif "RedPajama" in tokeniser.name_or_path:
                 logger.debug("'RedPajama' tokeniser chosen, adding 178 to vocab size for logits processor.")
                 vocab_size += 178
-            elif model_params["llama"] or "falcon" in tokeniser.name_or_path:
+            else:
                 vocab_size = len(tokeniser)
 
             logits_processor.append(
@@ -264,6 +274,7 @@ class NEREvaluation(Task):
             "pad_token_id": pad_token_id,
             "type_content_separator_token": type_content_separator_token,
             "entity_separator_token": entity_separator_token,
+            "hf_cache_dir": os.path.join(self.results_store.base_dir, ".hfcache"),
         }
 
         if strategy == "auto":
@@ -279,7 +290,6 @@ class NEREvaluation(Task):
 
         metrics = {}
         for split in datasets.keys():
-
             logger.info(f"Testing on split '{split}'")
             metrics[split] = trainer.test(model=model, dataloaders=dataloaders[split], verbose=True)
             logger.info(f"{split} performance:")
