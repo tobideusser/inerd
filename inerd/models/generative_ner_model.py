@@ -102,6 +102,7 @@ class GenerativeNERModel(pl.LightningModule):
             self.pad_token_id = self.tokeniser.pad_token_id
         self.logits_processor = logits_processor
 
+        self.max_new_tokens = generation_params.pop("max_new_tokens")
         self.generation_params = generation_params
         self.optimiser_params = optimiser_params
         self.learning_rate_scheduler_inputs = learning_rate_scheduler_inputs
@@ -165,12 +166,22 @@ class GenerativeNERModel(pl.LightningModule):
     #         )
 
     def generate(self, batch: Dict) -> Dict:
+        if isinstance(self.max_new_tokens, str):
+            if self.max_new_tokens == "adaptive":
+                max_new_tokens = batch["max_length_entity_string_tokens"] + 10
+            else:
+                raise ValueError(
+                    "max_new_tokens of generation_params must either be an integer or a string equaling 'adaptive'!"
+                )
+        else:
+            max_new_tokens = self.max_new_tokens
         predictions = self.model.generate(
             input_ids=batch["prompt_ids"],
             attention_mask=(batch["prompt_ids"] != self.pad_token_id).type(torch.LongTensor).to(self.device),
             logits_processor=self.logits_processor,
             synced_gpus=self.is_multigpu,
             pad_token_id=self.tokeniser.eos_token_id,
+            max_new_tokens=max_new_tokens,
             **self.generation_params,
         )
         batch["predictions"] = predictions

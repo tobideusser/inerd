@@ -51,5 +51,6 @@ class NERBatchCollator:
             "entity_string": [sentence.entity_string for sentence in batch],
             "ground_truth_entities": [[entity.to_dict() for entity in sentence.entities_anno] for sentence in batch],
             "max_length_prompt_ids": max_length_prompt_ids,
+            "max_length_entity_string_tokens": max_length_input_ids - max_length_prompt_ids,
         }
         return d

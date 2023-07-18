@@ -147,8 +147,11 @@ def main():
     checkpointing_time_interval = args.checkpointing_time_interval
     num_workers = args.num_workers  # 1
     force = args.force  # "ModelTraining+"
-    use_cuda = args.use_cuda
     cuda_ids = args.cuda_ids  # [1]  # [0, 1]
+    if cuda_ids is not None:
+        use_cuda = True
+    else:
+        use_cuda = args.use_cuda
     cuda_group = args.cuda_group
     warm_start = args.warm_start  # False  # continue training from an existing checkpoint
     gs_expansion_method: str = args.gs_expansion_method

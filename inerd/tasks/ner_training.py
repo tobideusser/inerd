@@ -202,6 +202,7 @@ class NERTraining(Task):
                 else "false",
                 "dataset": self.dataset_name,
                 "pre_training": self.pre_training,
+                "max_new_tokens": self.generation_params["max_new_tokens"],
             }
             for train_logger in loggers:
                 if isinstance(train_logger, pl.loggers.wandb.WandbLogger):
