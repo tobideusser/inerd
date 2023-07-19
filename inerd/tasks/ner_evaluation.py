@@ -201,7 +201,7 @@ class NEREvaluation(Task):
         # dataloaders = self._init_torch_dataloaders(
         #     datasets=datasets, batch_collator=batch_collator, training_params=training_params
         # )
-
+        vocab_size = len(tokeniser)
         if informed_generation:
             logits_processor = LogitsProcessorList()
             combine_token = (
@@ -211,16 +211,9 @@ class NEREvaluation(Task):
             )
             entity_type_tokens = sorted(list(corpus.entity_set))
 
-            vocab_size = tokeniser.vocab_size
-            if "bloom" in tokeniser.name_or_path:
-                logger.debug("'Bloom' tokeniser chosen, adding 200 to vocab size for logits processor.")
-                logger.debug("See: https://huggingface.co/bigscience/bloom-560m/discussions/43")
-                vocab_size += 200
-            elif "RedPajama" in tokeniser.name_or_path:
-                logger.debug("'RedPajama' tokeniser chosen, adding 178 to vocab size for logits processor.")
-                vocab_size += 178
-            else:
-                vocab_size = len(tokeniser)
+            if "RedPajama" in tokeniser.name_or_path:
+                logger.debug("'RedPajama' tokeniser chosen, fixing vocab_size to 50432.")
+                vocab_size = 50432
 
             logits_processor.append(
                 InformedNERDecoderLogitsProcessor(
@@ -284,6 +277,7 @@ class NEREvaluation(Task):
             "type_content_separator_token": type_content_separator_token,
             "entity_separator_token": entity_separator_token,
             "hf_cache_dir": os.path.join(self.results_store.base_dir, ".hfcache"),
+            "vocab_size": vocab_size,
         }
 
         if strategy == "auto":

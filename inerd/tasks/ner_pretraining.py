@@ -503,6 +503,7 @@ class NERPreTraining(Task):
             "entity_separator_token": entity_separator_token,
             "hf_cache_dir": os.path.join(self.results_store.base_dir, ".hfcache"),
             "hf_token": hf_token,
+            "vocab_size": len(tokeniser),
         }
 
         if strategy == "auto":

@@ -80,6 +80,8 @@ class GenerativeNERModel(pl.LightningModule):
         #     or "stanford-crfm/BioMedLM" in self.model_name
         #     or "RedPajama" in self.model_name
         # ) and self.model.lm_head.out_features != len(tokeniser):
+        print(f"vocab {vocab_size}")
+        print(f"self.model.lm_head.out_features {self.model.lm_head.out_features}")
         self.model.resize_token_embeddings(vocab_size)
 
         if self.lora:
