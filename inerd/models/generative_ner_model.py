@@ -1,20 +1,16 @@
-import os
-
 import logging
 from typing import Dict, Optional, List, Set
 
-import pandas as pd
 import numpy as np
+import pandas as pd
 import pytorch_lightning as pl
 import torch
 from deepspeed.ops.adam import DeepSpeedCPUAdam
 from peft import get_peft_model, LoraConfig, TaskType, PeftModelForCausalLM
+from pytorch_lightning.utilities import rank_zero_only
 from torch.distributed.fsdp.wrap import wrap
 from transformers import AutoModelForCausalLM, PreTrainedTokenizerFast, LlamaForCausalLM
-from pytorch_lightning.utilities import rank_zero_only
-
-
-from transformers.generation import GenerationConfig, LogitsProcessorList, StoppingCriteriaList
+from transformers.generation import LogitsProcessorList
 
 from inerd.training import Optimiser, LearningRateScheduler
 from inerd.utils import entity_string_to_entity_dataclass
@@ -37,10 +33,9 @@ class GenerativeNERModel(pl.LightningModule):
         logits_processor: Optional[LogitsProcessorList] = None,
         optimiser_params: Optional[Dict] = None,
         learning_rate_scheduler_inputs: Optional[Dict] = None,
-        # evaluator_params: Optional[Dict] = None,
-        # evaluator: Optional[Evaluator] = None,
         entity_set: Optional[Set[str]] = None,
         hf_cache_dir: Optional[str] = None,
+        hf_token: Optional[str] = None,
         do_zero_shot: bool = False,
         vocab_size: Optional[int] = None,
     ):
@@ -67,6 +62,10 @@ class GenerativeNERModel(pl.LightningModule):
         else:
             if model_params["llama"]:
                 self.model = LlamaForCausalLM.from_pretrained(self.model_name)
+            elif "Llama-2" in model_params["model_name"]:
+                self.model = AutoModelForCausalLM.from_pretrained(
+                    self.model_name, cache_dir=hf_cache_dir, token=hf_token
+                )
             else:
                 self.model = AutoModelForCausalLM.from_pretrained(
                     self.model_name,

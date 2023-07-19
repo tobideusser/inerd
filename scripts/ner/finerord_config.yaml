@@ -26,8 +26,7 @@ Parsing:
     OntoNotes: true
     NCBI-disease: true
 #      BC5CDR: "/cluster/data/ner/bc5cdr"
-#    CoNLL-2003: false
-#  dataset_name: "CoNLL-2003"
+#    CoNLL2003: false
   debug_size: null
   type_mapping: true
   entity_separator_token: "<ES>"
@@ -75,15 +74,16 @@ Parsing:
 
 Tokenisation:
 #  tokeniser_name: &modelname "tiiuae/falcon-7b"
-  tokeniser_name: &modelname "gpt2-xl"
-#  tokeniser_name: &modelname "/cephfs/llama_weights/huggingface_converted/7B"
+#  tokeniser_name: &modelname "/cephfs/llama_weights/huggingface_converted/13B"
 #  tokeniser_name: &modelname "/root/llama_weights/huggingface_converted/7B"
 #  tokeniser_name: &modelname "/mnt/cephfs/users/deusser/llama_weights/huggingface_converted/7B"
 #  tokeniser_name: &modelname "/cluster/public/llama_weights/huggingface_converted/7B"
 #  tokeniser_name: &modelname "/mnt/cephfs/users/deusser/llama_weights/huggingface_converted/13B"
+  tokeniser_name: &modelname "togethercomputer/RedPajama-INCITE-Base-3B-v1"
   llama: &llama false
   special_tokens: null
-  combine_token: "\n" # "<s>"
+  combine_token: "\n"
+#  combine_token: "<s>"
   add_leading_space: false
 
 ################
@@ -173,7 +173,7 @@ Training:
     informed_generation: true
     num_beams: 1
     do_sample: false
-    max_new_tokens: 100
+    max_new_tokens: "adaptive"
 
   training_params:
     optimiser:
@@ -188,7 +188,7 @@ Training:
 
     trainer:
       max_epochs: 15
-      accumulate_grad_batches: 16 # [2, 4]  # 4
+      accumulate_grad_batches: 4 # [2, 4]  # 4
       gradient_clip_val: 1  # [1, 10]  # 10
       precision: 32
 #        precision: 16

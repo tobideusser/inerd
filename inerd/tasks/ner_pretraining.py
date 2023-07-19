@@ -7,6 +7,7 @@ from typing import Dict, List, Union, Optional
 import pytorch_lightning as pl
 import wandb
 from fluidml import Task
+from huggingface_hub import login as hf_login
 from pytorch_lightning.loggers import TensorBoardLogger, WandbLogger, CSVLogger
 from pytorch_lightning.strategies import FSDPStrategy, DeepSpeedStrategy
 from transformers import AutoTokenizer, LlamaTokenizer
@@ -22,6 +23,7 @@ from inerd.training.callbacks import init_model_callbacks
 from inerd.training.dataloader import init_torch_dataloaders
 from inerd.utils import set_seeds
 from inerd.utils.fluid_helper import log_to_file
+from inerd import project_path
 
 logger = logging.getLogger(__name__)
 
@@ -318,8 +320,16 @@ class NERPreTraining(Task):
         # ):
         os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
+        hf_token = None
         if self.model_params["llama"]:
             tokeniser = LlamaTokenizer.from_pretrained(self.model_params["model_name"])
+        elif "Llama-2" in self.model_params["model_name"]:
+            path_to_token = os.path.join(project_path, "hf_token.txt")
+            with open(path_to_token, "r") as file:
+                hf_token = file.read().rstrip()
+            logger.info(f"Login to HuggingFace with the token stored under {path_to_token}")
+            hf_login(token=hf_token)
+            tokeniser = AutoTokenizer.from_pretrained(self.model_params["model_name"], token=hf_token)
         else:
             tokeniser = AutoTokenizer.from_pretrained(self.model_params["model_name"])
 
@@ -492,6 +502,7 @@ class NERPreTraining(Task):
             "type_content_separator_token": type_content_separator_token,
             "entity_separator_token": entity_separator_token,
             "hf_cache_dir": os.path.join(self.results_store.base_dir, ".hfcache"),
+            "hf_token": hf_token,
         }
 
         if strategy == "auto":

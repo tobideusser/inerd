@@ -7,10 +7,12 @@ from typing import Dict, List, Union, Optional
 import pytorch_lightning as pl
 import wandb
 from fluidml import Task
+from huggingface_hub import login as hf_login
 from pytorch_lightning.loggers import WandbLogger, CSVLogger
 from pytorch_lightning.strategies import FSDPStrategy, DeepSpeedStrategy
 from transformers import AutoTokenizer, LogitsProcessorList, LlamaTokenizer
 
+from inerd import project_path
 from inerd.data_classes import NERCorpus
 from inerd.models import GenerativeNERModel, GenerativeNERModelFSDP, GenerativeNERModelDeepSpeed
 from inerd.training import (
@@ -89,34 +91,6 @@ class NERTraining(Task):
         logger.info(f"Test length: {len(datasets['test'])} sentences.")
 
         return datasets
-
-    # def _init_torch_dataloaders(
-    #     self,
-    #     datasets: Dict[str, GenerativeNERDataset],
-    #     batch_collator: NERBatchCollator,
-    # ) -> Dict[str, DataLoader]:
-    #
-    #     if is_debug():
-    #         logger.warning(
-    #             "Debug mode detected, setting num_workers=0 for torch dataloader. This allows proper debugging."
-    #         )
-    #         num_workers = 0
-    #     else:
-    #         num_workers = 25
-    #
-    #     dataloaders = {}
-    #     for split_type, split_dataset in datasets.items():
-    #
-    #         dataloaders[split_type] = DataLoader(
-    #             dataset=split_dataset,
-    #             collate_fn=batch_collator,
-    #             shuffle=True if split_type == "train" else False,
-    #             num_workers=num_workers,
-    #             # drop_last=True,
-    #             **self.training_params["data_loading"],
-    #         )
-    #
-    #     return dataloaders
 
     def _init_model_loggers(self) -> Union[List, None]:
         store_context = self.get_store_context()
@@ -208,54 +182,6 @@ class NERTraining(Task):
                 if isinstance(train_logger, pl.loggers.wandb.WandbLogger):
                     train_logger.experiment.config.update(hyperparameter_to_be_logged)
 
-    # def _init_model_callbacks(self) -> List:
-    #     callbacks = [
-    #         ProgressBar(),
-    #         LearningRateMonitor(logging_interval="step"),
-    #         ExceptionHandling(),
-    #     ]
-    #
-    #     store_context = self.get_store_context()
-    #     if store_context:
-    #         run_dir = store_context.run_dir
-    #
-    #         # if not self.is_subprocess:
-    #         if self.gpu_scaling == "deepspeed":
-    #             model_checkpoint = ModelCheckpoint(
-    #                 monitor="epoch",
-    #                 every_n_epochs=1,
-    #                 dirpath=os.path.join(run_dir, "models"),
-    #                 verbose=True,
-    #                 save_last=True,
-    #                 save_on_train_epoch_end=True,
-    #                 save_top_k=-1,
-    #                 save_weights_only=True,
-    #             )
-    #         else:
-    #             model_checkpoint = ModelCheckpoint(
-    #                 monitor=self.training_params["callbacks"].monitor_var,
-    #                 dirpath=os.path.join(run_dir, "models"),
-    #                 filename="best_model",
-    #                 save_top_k=self.training_params["callbacks"].save_top_k,
-    #                 verbose=True,
-    #                 save_last=True,
-    #                 mode=self.training_params["callbacks"].monitor_var_mode,
-    #             )
-    #         model_checkpoint.FILE_EXTENSION = ""  # handled by fluidml file store
-    #         callbacks.append(model_checkpoint)
-    #
-    #     if self.training_params["callbacks"].apply_early_stopping:
-    #         if not self.is_subprocess:
-    #             callbacks.append(
-    #                 EarlyStopping(
-    #                     monitor=self.training_params["callbacks"].monitor_var,
-    #                     mode=self.training_params["callbacks"].monitor_var_mode,
-    #                     patience=self.training_params["callbacks"].patience,
-    #                 )
-    #             )
-    #
-    #     return callbacks
-
     @log_to_file
     def run(self, corpus_tokenised: NERCorpus, best_model: Optional[Dict] = None):
         if isinstance(corpus_tokenised, Dict):
@@ -307,6 +233,13 @@ class NERTraining(Task):
 
         if self.model_params["llama"]:
             tokeniser = LlamaTokenizer.from_pretrained(self.model_params["model_name"])
+        elif "Llama-2" in self.model_params["model_name"]:
+            path_to_token = os.path.join(project_path, "hf_token.txt")
+            with open(path_to_token, "r") as file:
+                hf_token = file.read().rstrip()
+            logger.info(f"Login to HuggingFace with the token stored under {path_to_token}")
+            hf_login(token=hf_token)
+            tokeniser = AutoTokenizer.from_pretrained(self.model_params["model_name"], token=hf_token)
         else:
             tokeniser = AutoTokenizer.from_pretrained(self.model_params["model_name"])
 

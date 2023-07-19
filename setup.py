@@ -13,7 +13,7 @@ setup(
         "pytorch-lightning==2.0.3",
         "torch",
         "tqdm",
-        "transformers==4.29.2",
+        "transformers==4.31.0",
         "wandb",
         "pyyaml",
         "rich",

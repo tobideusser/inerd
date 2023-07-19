@@ -5,10 +5,12 @@ from typing import Optional, Union, List, Dict
 
 import pytorch_lightning as pl
 from fluidml import Task
+from huggingface_hub import login as hf_login
 from pytorch_lightning.loggers import WandbLogger, CSVLogger
 from pytorch_lightning.strategies import FSDPStrategy, DeepSpeedStrategy
 from transformers import AutoTokenizer, LogitsProcessorList, LlamaTokenizer
 
+from inerd import project_path
 from inerd.data_classes import NERCorpus
 from inerd.models import GenerativeNERModel, GenerativeNERModelFSDP, GenerativeNERModelDeepSpeed
 from inerd.training import (
@@ -145,6 +147,13 @@ class NEREvaluation(Task):
 
         if model_params["llama"]:
             tokeniser = LlamaTokenizer.from_pretrained(model_params["model_name"])
+        elif "Llama-2" in model_params["model_name"]:
+            path_to_token = os.path.join(project_path, "hf_token.txt")
+            with open(path_to_token, "r") as file:
+                hf_token = file.read().rstrip()
+            logger.info(f"Login to HuggingFace with the token stored under {path_to_token}")
+            hf_login(token=hf_token)
+            tokeniser = AutoTokenizer.from_pretrained(model_params["model_name"], token=hf_token)
         else:
             tokeniser = AutoTokenizer.from_pretrained(model_params["model_name"])
 

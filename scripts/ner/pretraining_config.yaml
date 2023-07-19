@@ -25,12 +25,12 @@ Parsing:
 #    WNUT-17: [true, true, true, true, false, true, true]
 #    OntoNotes: [true, true, true, true, true, false, true]
 #    NCBI-disease: [true, true, true, true, true, true, false]
-    FiNER-ORD: false
-    CoNLL++: false
-    Few-NERD: false
+    FiNER-ORD: true
+    CoNLL++: true
+    Few-NERD: true
     JNLPBA: true
-    WNUT-17: false
-    OntoNotes: false
+    WNUT-17: true
+    OntoNotes: true
     NCBI-disease: true
 #      BC5CDR: "/cluster/data/ner/bc5cdr"
 #    CoNLL-2003: false
@@ -81,10 +81,11 @@ Parsing:
 # "togethercomputer/RedPajama-INCITE-Base-7B-v0.1"
 
 Tokenisation:
+  tokeniser_name: &modelname "meta-llama/Llama-2-7b-hf"
 #  tokeniser_name: &modelname "tiiuae/falcon-7b"
 #  tokeniser_name: &modelname "togethercomputer/RedPajama-INCITE-7B-Base"
 #  tokeniser_name: &modelname "gpt2-xl"
-  tokeniser_name: &modelname "/cephfs/llama_weights/huggingface_converted/7B"
+#  tokeniser_name: &modelname "/cephfs/llama_weights/huggingface_converted/7B"
 #  tokeniser_name: &modelname "/cephfs/llama_weights/huggingface_converted/13B"
 #  tokeniser_name: &modelname "/root/llama_weights/huggingface_converted/7B"
 #  tokeniser_name: &modelname "/mnt/cephfs/users/deusser/llama_weights/huggingface_converted/7B"
@@ -92,7 +93,7 @@ Tokenisation:
 #  tokeniser_name: &modelname "/mnt/cephfs/users/deusser/llama_weights/huggingface_converted/13B"
 #  tokeniser_name: &modelname "/cephfs/llama_weights/huggingface_converted/13B"
 #  tokeniser_name: &modelname "togethercomputer/RedPajama-INCITE-Base-3B-v1"
-  llama: &llama true
+  llama: &llama false
   special_tokens: null
 #  combine_token: "\n"
   combine_token: "<s>"
@@ -124,7 +125,7 @@ PreTraining:
       informed_generation: false
       num_beams: 1
       do_sample: false
-      max_new_tokens: 100
+      max_new_tokens: "adaptive"
 
     training_params:
       optimiser:

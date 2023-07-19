@@ -1,10 +1,14 @@
+import os
 import logging
 from typing import Dict, Optional, Union, List
 
 from fluidml import Task
+
+from huggingface_hub import login as hf_login
 from tqdm import tqdm
 from transformers import AutoTokenizer, LlamaTokenizer
 
+from inerd import project_path
 from inerd.data_classes import NERCorpus
 from inerd.utils.utils import set_seed_number, set_seeds
 
@@ -35,6 +39,13 @@ class Tokenisation(Task):
 
         if llama:
             self.tokeniser = LlamaTokenizer.from_pretrained(self.tokeniser_name)
+        elif "Llama-2" in tokeniser_name:
+            path_to_token = os.path.join(project_path, "hf_token.txt")
+            with open(path_to_token, "r") as file:
+                hf_token = file.read().rstrip()
+            logger.info(f"Login to HuggingFace with the token stored under {path_to_token}")
+            hf_login(token=hf_token)
+            self.tokeniser = AutoTokenizer.from_pretrained(tokeniser_name, token=hf_token)
         else:
             self.tokeniser = AutoTokenizer.from_pretrained(self.tokeniser_name)
 
