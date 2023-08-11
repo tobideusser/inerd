@@ -63,17 +63,12 @@ class Sentence:
     entity_label: Optional[List[str]] = None
     text: Optional[str] = None
 
-    # token_ids: Optional[List[int]] = None
-    # tokens: Optional[List[str]] = None
-
     word2token_alignment_mask: Optional[Union[List[List[bool]], Tensor]] = None
     word2token_start_ids: Optional[List[int]] = None
     word2token_end_ids: Optional[List[int]] = None
 
     entity_iobes: Optional[List[str]] = None
     entities_anno: Optional[List[Entity]] = None
-    # entity_string_tokens: Optional[List[str]] = None
-    # entity_string_token_ids: Optional[List[int]] = None
 
     _content: Optional[str] = None
     _entity_string: Optional[str] = None
@@ -138,42 +133,9 @@ class Sentence:
                     break
         return self._prompt_end_in_input_ids
 
-    # @property
-    # def input_ids(self) -> List[int]:
-    #     """
-    #     Input ids for the actual generative model. This is a concatination of token_ids and entity_string_token_ids.
-    #
-    #     :return: input_ids
-    #     :rtype: list
-    #     """
-    #     if self._input_ids is None:
-    #         self._generate_input_ids_and_labels()
-    #     return self._input_ids
-    #
-    # @property
-    # def labels(self) -> List[int]:
-    #     """
-    #     Labels for the actual generative model. This is a concatination of [-100] * len(token_ids) and
-    #     entity_string_token_ids.
-    #
-    #     :return: input_ids
-    #     :rtype: list
-    #     """
-    #     if self._labels is None:
-    #         self._generate_input_ids_and_labels()
-    #     return self._labels
-
     @property
     def num_input_ids(self) -> int:
         return len(self.input_ids)
-
-    # @property
-    # def num_tokens(self) -> int:
-    #     return len(self.token_ids)
-    #
-    # def _generate_input_ids_and_labels(self):
-    #     self._input_ids = self.token_ids + self.entity_string_token_ids
-    #     self._labels = [-100] * len(self.token_ids) + self.entity_string_token_ids
 
     @classmethod
     def from_dict(cls, d: Dict):

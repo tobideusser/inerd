@@ -73,15 +73,6 @@ class GenerativeNERModel(pl.LightningModule):
                     cache_dir=hf_cache_dir,
                 )
 
-        # if (
-        #     "tiiuae/falcon" in self.model_name
-        #     or "gpt2" in self.model_name
-        #     or model_params["llama"]
-        #     or "stanford-crfm/BioMedLM" in self.model_name
-        #     or "RedPajama" in self.model_name
-        # ) and self.model.lm_head.out_features != len(tokeniser):
-        print(f"vocab {vocab_size}")
-        print(f"self.model.lm_head.out_features {self.model.lm_head.out_features}")
         self.model.resize_token_embeddings(vocab_size)
 
         if self.lora:
@@ -91,6 +82,8 @@ class GenerativeNERModel(pl.LightningModule):
                     task_type=TaskType.CAUSAL_LM, target_modules=["query_key_value"], **self.lora_config
                 )
             else:
+                if "Llama-2-13b" in model_params["model_name"]:
+                    self.model.enable_input_require_grads()
                 peft_config = LoraConfig(task_type=TaskType.CAUSAL_LM, **self.lora_config)
             self.model = get_peft_model(model=self.model, peft_config=peft_config)
         else:
@@ -107,10 +100,6 @@ class GenerativeNERModel(pl.LightningModule):
         self.generation_params = generation_params
         self.optimiser_params = optimiser_params
         self.learning_rate_scheduler_inputs = learning_rate_scheduler_inputs
-        # if evaluator is not None:
-        #     self.evaluator = evaluator
-        # elif evaluator_params is not None:
-        #     self.evaluator = Evaluator.from_config(**evaluator_params)
 
         self.is_multigpu = is_multigpu
         self.is_mainprocess = is_mainprocess
@@ -123,48 +112,6 @@ class GenerativeNERModel(pl.LightningModule):
         self.entity_strings_ground_truth: List[str] = []
         self.best_valid_ner_micro_f1 = 0
         self.best_epoch = 0
-
-    # def configure_sharded_model(self) -> None:
-    #     if isinstance(self.model, PeftModelForCausalLM):
-    #         raise AssertionError(
-    #             "No memory efficiency gains with lora & fsdp. See https://github.com/pytorch/pytorch/issues/91165"
-    #         )
-    #         # if isinstance(self.model.base_model.model, LlamaForCausalLM):
-    #         #     self.model.base_model.model.base_model.embed_tokens = wrap(
-    #         #         self.model.base_model.model.base_model.embed_tokens
-    #         #     )
-    #         #     for i, layer in enumerate(self.model.base_model.model.base_model.layers):
-    #         #         self.model.base_model.model.base_model.layers[i].input_layernorm = wrap(layer.input_layernorm)
-    #         #         self.model.base_model.model.base_model.layers[i].mlp = wrap(layer.mlp)
-    #         #         self.model.base_model.model.base_model.layers[i].post_attention_layernorm = wrap(
-    #         #             layer.post_attention_layernorm
-    #         #         )
-    #         #         # self.model.base_model.model.base_model.layers[i].self_attn = wrap(layer.self_attn)
-    #         #         self.model.base_model.model.base_model.layers[i].self_attn.k_proj = wrap(layer.self_attn.k_proj)
-    #         #         self.model.base_model.model.base_model.layers[i].self_attn.o_proj = wrap(layer.self_attn.o_proj)
-    #         #         self.model.base_model.model.base_model.layers[i].self_attn.q_proj = wrap(layer.self_attn.q_proj)
-    #         #         self.model.base_model.model.base_model.layers[i].self_attn.v_proj = wrap(layer.self_attn.v_proj)
-    #         #         self.model.base_model.model.base_model.layers[i].self_attn.rotary_emb = wrap(
-    #         #             layer.self_attn.rotary_emb
-    #         #         )
-    #         #     self.model.base_model.model.lm_head = wrap(self.model.base_model.model.lm_head)
-    #     elif isinstance(self.model, LlamaForCausalLM):
-    #         self.model.base_model.embed_tokens = wrap(self.model.base_model.embed_tokens)
-    #         for i, layer in enumerate(self.model.base_model.layers):
-    #             self.model.base_model.layers[i] = wrap(layer)
-    #         self.model.lm_head = wrap(self.model.lm_head)
-    #
-    #     elif self.model.base_model_prefix == "gpt_neox":  # redpajama model
-    #         self.model.gpt_neox.embed_in = wrap(self.model.gpt_neox.embed_in)
-    #         for i, layer in enumerate(self.model.gpt_neox.layers):
-    #             self.model.gpt_neox.layers[i] = wrap(layer)
-    #         self.model.gpt_neox.final_layer_norm = wrap(self.model.gpt_neox.final_layer_norm)
-    #         self.model.embed_out = wrap(self.model.embed_out)
-    #     else:
-    #         raise NotImplementedError(
-    #             f"manual wrapping for model_name: {self.model_name} and base_model_prefix: "
-    #             f"{self.model.base_model_prefix} not implemented."
-    #         )
 
     def generate(self, batch: Dict) -> Dict:
         if isinstance(self.max_new_tokens, str):
@@ -196,22 +143,6 @@ class GenerativeNERModel(pl.LightningModule):
 
     def validation_step(self, batch: Dict, batch_idx: int) -> Dict:
         return self.generate(batch=batch)
-        # predictions = self.model.generate(
-        #     input_ids=batch["prompt_ids"],
-        #     attention_mask=(batch["prompt_ids"] != self.pad_token_id).type(torch.LongTensor).to(self.device),
-        #     logits_processor=self.logits_processor,
-        #     synced_gpus=self.is_multigpu,
-        #     pad_token_id=self.tokeniser.eos_token_id,
-        #     **self.generation_params,
-        # )
-        # batch["predictions"] = predictions
-        # batch["output_tokens"] = [
-        #     self.tokeniser.convert_ids_to_tokens(p, skip_special_tokens=True) for p in torch.unbind(predictions, dim=0)
-        # ]
-        # entity_string_token_ids_predicted = predictions[:, batch["max_length_prompt_ids"] :]
-        # batch["entity_string_predicted"] = self.tokeniser.batch_decode(entity_string_token_ids_predicted)
-        # batch = self._detach_tensors_in_dict(batch)
-        # return batch
 
     def on_validation_batch_end(self, outputs, batch, batch_idx, dataloader_idx=0) -> None:
         # update stored results to evalaluate them at the end of the epoch
@@ -252,23 +183,6 @@ class GenerativeNERModel(pl.LightningModule):
             torch.cuda.empty_cache()
 
         return model_output.loss
-
-    # def forward(self, batch) -> torch.Tensor:
-    #     # return self.model(input_ids=batch["input_ids"], labels=batch.get("labels", None))
-    #     # labels = batch.get("labels", None)
-    #     model_output = self.model(input_ids=batch["input_ids"], labels=batch.get("labels", None))
-    #
-    #     loss = float(model_output.loss)
-    #     self.log(
-    #         "train-loss-step",
-    #         loss,
-    #         batch_size=self.trainer.train_dataloader.batch_size,
-    #         # rank_zero_only=True,
-    #         sync_dist=self.is_multigpu,
-    #         prog_bar=True,
-    #     )
-    #     # batch["loss"] = model_output.loss
-    #     return model_output.loss
 
     def log_metrics(self, split: str):
         if split == "test" and self.global_step == 0 and self.do_zero_shot:
@@ -317,18 +231,6 @@ class GenerativeNERModel(pl.LightningModule):
                 train_logger.log_text(key=split + "_predictions", dataframe=table, step=self.global_step)
             else:
                 logger.warning(f"pl.Trainer.logger of type {type(train_logger)} can not store text.")
-
-    # def _log_summary_dict(self, name: str, summary_dict: Dict):
-    #     # use pandas to format as a human-readable table
-    #     table = pd.DataFrame.from_dict(summary_dict, orient="index")
-    #     table = table.reset_index(names="metric")
-    #     for train_logger in self.loggers:
-    #         if isinstance(train_logger, pl.loggers.tensorboard.TensorBoardLogger):
-    #             train_logger.experiment.add_text(name, table.to_string(), global_step=self.current_epoch)
-    #         elif isinstance(train_logger, pl.loggers.wandb.WandbLogger):
-    #             train_logger.log_table(key=name, dataframe=table, step=self.global_step)
-    #         else:
-    #             logger.warning(f"pl.Trainer.logger of type {type(train_logger)} can not store text.")
 
     @staticmethod
     def _detach_tensors_in_dict(d: Dict) -> Dict:
@@ -473,25 +375,6 @@ class GenerativeNERModelFSDP(GenerativeNERModel):
             raise AssertionError(
                 "No memory efficiency gains with lora & fsdp. See https://github.com/pytorch/pytorch/issues/91165"
             )
-            # if isinstance(self.model.base_model.model, LlamaForCausalLM):
-            #     self.model.base_model.model.base_model.embed_tokens = wrap(
-            #         self.model.base_model.model.base_model.embed_tokens
-            #     )
-            #     for i, layer in enumerate(self.model.base_model.model.base_model.layers):
-            #         self.model.base_model.model.base_model.layers[i].input_layernorm = wrap(layer.input_layernorm)
-            #         self.model.base_model.model.base_model.layers[i].mlp = wrap(layer.mlp)
-            #         self.model.base_model.model.base_model.layers[i].post_attention_layernorm = wrap(
-            #             layer.post_attention_layernorm
-            #         )
-            #         # self.model.base_model.model.base_model.layers[i].self_attn = wrap(layer.self_attn)
-            #         self.model.base_model.model.base_model.layers[i].self_attn.k_proj = wrap(layer.self_attn.k_proj)
-            #         self.model.base_model.model.base_model.layers[i].self_attn.o_proj = wrap(layer.self_attn.o_proj)
-            #         self.model.base_model.model.base_model.layers[i].self_attn.q_proj = wrap(layer.self_attn.q_proj)
-            #         self.model.base_model.model.base_model.layers[i].self_attn.v_proj = wrap(layer.self_attn.v_proj)
-            #         self.model.base_model.model.base_model.layers[i].self_attn.rotary_emb = wrap(
-            #             layer.self_attn.rotary_emb
-            #         )
-            #     self.model.base_model.model.lm_head = wrap(self.model.base_model.model.lm_head)
         elif isinstance(self.model, LlamaForCausalLM):
             self.model.base_model.embed_tokens = wrap(self.model.base_model.embed_tokens)
             for i, layer in enumerate(self.model.base_model.layers):

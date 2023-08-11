@@ -42,6 +42,7 @@ class NERTraining(Task):
         wandb_logging: bool = False,
         csv_logging: bool = True,
         pre_training: bool = True,
+        no_zero_shot: bool = False,
         checkpointing_time_interval: Optional[float] = None,
     ):
         super().__init__()
@@ -54,6 +55,7 @@ class NERTraining(Task):
         self.dataset_name = dataset
         self.gpu_scaling = gpu_scaling
         self.warm_start = warm_start
+        self.zero_shot = not no_zero_shot
         self.checkpointing_time_interval = (
             timedelta(seconds=checkpointing_time_interval) if checkpointing_time_interval is not None else None
         )
@@ -218,17 +220,6 @@ class NERTraining(Task):
         logger.info(f"Deleted {i} occurences exceeding the max input length of {max_len}.")
         set_seeds(self.seed)
 
-        # this disables the warning that appears when using bloom, opt, and RedPajama (and others?)
-        # see here:
-        #   https://stackoverflow.com/questions/62691279/how-to-disable-tokenizers-parallelism-true-false-warning
-        # if (
-        #     "bloom" in self.model_params["model_name"]
-        #     or "RedPajama" in self.model_params["model_name"]
-        #     or "opt" in self.model_params["model_name"]
-        #     or "gpt-2" in self.model_params["model_name"]
-        #     or "falcon" in self.model_params["model_name"]
-        #     or self.model_params["llama"]
-        # ):
         os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
         if self.model_params["llama"]:
@@ -295,8 +286,6 @@ class NERTraining(Task):
         else:
             callbacks = init_model_callbacks()
 
-        # entity_type_token_ids = tokeniser(text=sorted(list(corpus.entity_set)), add_special_tokens=False).input_ids
-
         vocab_size = len(tokeniser)
         if self.informed_generation:
             logits_processor = LogitsProcessorList()
@@ -306,16 +295,6 @@ class NERTraining(Task):
                 else "\n"
             )
             entity_type_tokens = sorted(list(corpus.entity_set))
-
-            # vocab_size = tokeniser.vocab_size
-            # if "bloom" in tokeniser.name_or_path:
-            #     logger.debug("'Bloom' tokeniser chosen, adding 200 to vocab size for logits processor.")
-            #     logger.debug("See: https://huggingface.co/bigscience/bloom-560m/discussions/43")
-            #     vocab_size += 200
-            # elif "RedPajama" in tokeniser.name_or_path:
-            #     logger.debug("'RedPajama' tokeniser chosen, adding 178 to vocab size for logits processor.")
-            #     vocab_size += 178
-            # elif self.model_params["llama"] or "falcon" in tokeniser.name_or_path:
 
             if "RedPajama" in tokeniser.name_or_path:
                 logger.debug("'RedPajama' tokeniser chosen, fixing vocab_size to 50432.")
@@ -350,17 +329,6 @@ class NERTraining(Task):
                     )
                 else:
                     strategy = "auto"
-                # if "bloom" in self.model_params["model_name"]:
-                #     strategy = FSDPStrategy(cpu_offload=True, activation_checkpointing=BloomBlock)
-                # elif "opt" in self.model_params["model_name"]:
-                #     strategy = FSDPStrategy(cpu_offload=True, activation_checkpointing=OPTDecoderLayer)
-                # else:
-                #     strategy = FSDPStrategy(cpu_offload=False)
-                # strategy = DeepSpeedStrategy(
-                #     stage=3,
-                #     offload_optimizer=True,
-                #     offload_parameters=True,
-                # )
             else:
                 strategy = "auto"
         else:
@@ -423,13 +391,15 @@ class NERTraining(Task):
         else:
             raise ValueError()
 
-        if self.pre_training:
-            model.load_state_dict(best_model["state_dict"])
+        if not self.warm_start:
+            if self.pre_training:
+                model.load_state_dict(best_model["state_dict"])
 
-            logger.info("Doing zero-shot evaluation on test set.")
-            zero_shot_metrics = trainer.test(model=model, dataloaders=dataloaders["test"])
-            logger.info("Zero-shot metrics:")
-            logger.info(zero_shot_metrics)
+            if self.zero_shot:
+                logger.info("Doing zero-shot evaluation on test set.")
+                zero_shot_metrics = trainer.test(model=model, dataloaders=dataloaders["test"])
+                logger.info("Zero-shot metrics:")
+                logger.info(zero_shot_metrics)
 
         trainer.fit(
             model=model,

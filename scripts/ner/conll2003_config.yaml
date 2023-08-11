@@ -74,17 +74,16 @@ Parsing:
 
 Tokenisation:
 #  tokeniser_name: &modelname "tiiuae/falcon-7b"
-#  tokeniser_name: &modelname "/cephfs/llama_weights/huggingface_converted/13B"
+#  tokeniser_name: &modelname "gpt2-xl"
   tokeniser_name: &modelname "/cephfs/llama_weights/huggingface_converted/7B"
 #  tokeniser_name: &modelname "/root/llama_weights/huggingface_converted/7B"
 #  tokeniser_name: &modelname "/mnt/cephfs/users/deusser/llama_weights/huggingface_converted/7B"
 #  tokeniser_name: &modelname "/cluster/public/llama_weights/huggingface_converted/7B"
 #  tokeniser_name: &modelname "/mnt/cephfs/users/deusser/llama_weights/huggingface_converted/13B"
-#  tokeniser_name: &modelname "togethercomputer/RedPajama-INCITE-Base-3B-v1"
   llama: &llama true
   special_tokens: null
-#  combine_token: "\n"
   combine_token: "<s>"
+#  combine_token: "\n" # "<s>"
   add_leading_space: false
 
 ################
@@ -171,7 +170,7 @@ Training:
       fan_in_fan_out: false
 
   generation_params:
-    informed_generation: true
+    informed_generation: false
     num_beams: 1
     do_sample: false
     max_new_tokens: "adaptive"

@@ -3,7 +3,7 @@ from setuptools import setup, find_packages
 setup(
     name="inerd",
     version="0.1",
-    author="Tobias Deusser",
+    author="Tobias Deußer",
     packages=find_packages(),
     install_requires=[
         "torch==2.0.0",
@@ -13,7 +13,7 @@ setup(
         "pytorch-lightning==2.0.3",
         "torch",
         "tqdm",
-        "transformers==4.31.0",
+        "transformers==4.29.2",
         "wandb",
         "pyyaml",
         "rich",

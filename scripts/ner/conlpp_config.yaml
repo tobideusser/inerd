@@ -83,8 +83,8 @@ Tokenisation:
 #  tokeniser_name: &modelname "/mnt/cephfs/users/deusser/llama_weights/huggingface_converted/13B"
   llama: &llama true
   special_tokens: null
-#  combine_token: "\n"
   combine_token: "<s>"
+#  combine_token: "\n" # "<s>"
   add_leading_space: false
 
 ################
@@ -163,7 +163,7 @@ Training:
     model_name: *modelname
     llama: *llama
     load_in_8bit: false
-    lora: false
+    lora: true
     lora_config:
       r: 8
       lora_alpha: 32

@@ -9,10 +9,8 @@ from typing import Union, Optional, Dict, Callable, Any, List
 
 import fsspec
 import torch
-from fluidml.storage import LocalFileStore, TypeInfo, StoreContext
+from fluidml.storage import LocalFileStore, TypeInfo
 from lightning_fabric.plugins.io import TorchCheckpointIO
-from lightning_fabric.utilities.cloud_io import _load as pl_load
-from lightning_fabric.utilities.cloud_io import get_filesystem
 from rich.logging import RichHandler
 from transformers import PreTrainedTokenizerFast
 
@@ -63,9 +61,6 @@ class MyLocalFileStore(LocalFileStore):
 
     def _save_pl_checkpoint(self, checkpoint: Dict[str, Any], path: Union[str, Path]):
         self.torch_checkpoint_io.save_checkpoint(checkpoint=checkpoint, path=path, storage_options=None)
-        # fs = get_filesystem(path)
-        # fs.makedirs(os.path.dirname(path), exist_ok=True)
-        # atomic_save(checkpoint, path)
 
     def _load_pl_checkpoint(
         self,
@@ -76,11 +71,6 @@ class MyLocalFileStore(LocalFileStore):
         if type_ is not None:
             assert type_ == "pl_checkpoint"
         return self.torch_checkpoint_io.load_checkpoint(path=path, map_location=map_location)
-        # Try to read the checkpoint at `path`. If not exist, do not restore checkpoint.
-        # fs = get_filesystem(path)
-        # if not fs.exists(path):
-        #     raise FileNotFoundError(f"Checkpoint at {path} not found. Aborting training.")
-        # return pl_load(path, map_location=map_location)
 
 
 @dataclass

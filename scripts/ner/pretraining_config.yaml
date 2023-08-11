@@ -82,6 +82,7 @@ Parsing:
 
 Tokenisation:
   tokeniser_name: &modelname "meta-llama/Llama-2-7b-hf"
+#  tokeniser_name: &modelname "meta-llama/Llama-2-13b-hf"
 #  tokeniser_name: &modelname "tiiuae/falcon-7b"
 #  tokeniser_name: &modelname "togethercomputer/RedPajama-INCITE-7B-Base"
 #  tokeniser_name: &modelname "gpt2-xl"
@@ -139,8 +140,8 @@ PreTraining:
 #        lr_warmup: 0.1
 
       trainer:
-        max_epochs: 15
-        accumulate_grad_batches: 16 # [2, 4]  # 4
+        max_epochs: 10
+        accumulate_grad_batches: 64 # [2, 4]  # 4
         gradient_clip_val: 1  # [1, 10]  # 10
         precision: 32
 #        precision: 16
@@ -154,7 +155,7 @@ PreTraining:
         save_top_k: 1
 
       data_loading:
-        batch_size: 4
+        batch_size: 1
 #        drop_last: false
         combine_train_valid: false
         validate_on_test_set: false

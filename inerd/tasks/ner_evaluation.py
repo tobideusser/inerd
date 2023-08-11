@@ -77,35 +77,6 @@ class NEREvaluation(Task):
         else:
             return None
 
-    # @staticmethod
-    # def _init_torch_dataloaders(
-    #     datasets: Dict[str, GenerativeNERDataset],
-    #     batch_collator: NERBatchCollator,
-    #     training_params: Dict,
-    # ) -> Dict[str, DataLoader]:
-    #
-    #     if is_debug():
-    #         logger.warning(
-    #             "Debug mode detected, setting num_workers=0 for torch dataloader. This allows proper debugging."
-    #         )
-    #         num_workers = 0
-    #     else:
-    #         num_workers = 25
-    #
-    #     dataloaders = {}
-    #     for split_type, split_dataset in datasets.items():
-    #
-    #         dataloaders[split_type] = DataLoader(
-    #             dataset=split_dataset,
-    #             collate_fn=batch_collator,
-    #             shuffle=False,
-    #             num_workers=num_workers,
-    #             # drop_last=True,
-    #             **training_params["data_loading"],
-    #         )
-    #
-    #     return dataloaders
-
     def run(self, best_model: Dict, corpus_tokenised: NERCorpus):
         model_params = deepcopy(self.unique_config["NERTraining"]["model_params"])
         training_params = deepcopy(self.unique_config["NERTraining"]["training_params"])
@@ -136,13 +107,6 @@ class NEREvaluation(Task):
             entity_separator_token = corpus[0].entity_separator_token
             type_content_separator_token = corpus[0].type_content_separator_token
 
-        # if (
-        #     "bloom" in model_params["model_name"]
-        #     or "RedPajama" in model_params["model_name"]
-        #     or "opt" in model_params["model_name"]
-        #     or "gpt-2" in model_params["model_name"]
-        #     or model_params["llama"]
-        # ):
         os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
         if model_params["llama"]:
@@ -198,9 +162,6 @@ class NEREvaluation(Task):
             csv_logging=csv_logging,
             onefewshot=training_params["trainer"]["max_epochs"] <= 1,
         )
-        # dataloaders = self._init_torch_dataloaders(
-        #     datasets=datasets, batch_collator=batch_collator, training_params=training_params
-        # )
         vocab_size = len(tokeniser)
         if informed_generation:
             logits_processor = LogitsProcessorList()
@@ -251,19 +212,6 @@ class NEREvaluation(Task):
             strategy=strategy,
         )
 
-        # model = GenerativeNERModel(
-        #     model_params=model_params,
-        #     optimiser_params=training_params["optimiser"],
-        #     generation_params=generation_params,
-        #     # evaluator_params=self.training_params["metrics"],
-        #     tokeniser=tokeniser,
-        #     logits_processor=logits_processor,
-        #     is_multigpu=True if strategy != "auto" else False,
-        #     is_mainprocess=not self.is_subprocess,
-        #     entity_set=corpus.entity_set,
-        #     pad_token_id=pad_token_id,
-        #     # do_logging=self.is_subprocess,
-        # )
         init_model_parameter = {
             "model_params": model_params,
             "optimiser_params": training_params["optimiser"],

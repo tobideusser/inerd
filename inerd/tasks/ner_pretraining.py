@@ -12,6 +12,7 @@ from pytorch_lightning.loggers import TensorBoardLogger, WandbLogger, CSVLogger
 from pytorch_lightning.strategies import FSDPStrategy, DeepSpeedStrategy
 from transformers import AutoTokenizer, LlamaTokenizer
 
+from inerd import project_path
 from inerd.data_classes import NERCorpus
 from inerd.models import GenerativeNERModel, GenerativeNERModelFSDP, GenerativeNERModelDeepSpeed
 from inerd.training import (
@@ -23,7 +24,6 @@ from inerd.training.callbacks import init_model_callbacks
 from inerd.training.dataloader import init_torch_dataloaders
 from inerd.utils import set_seeds
 from inerd.utils.fluid_helper import log_to_file
-from inerd import project_path
 
 logger = logging.getLogger(__name__)
 
@@ -93,34 +93,6 @@ class NERPreTraining(Task):
         logger.info(f"Test length: {len(datasets['test'])} sentences.")
 
         return datasets
-
-    # def _init_torch_dataloaders(
-    #     self,
-    #     datasets: Dict[str, GenerativeNERDataset],
-    #     batch_collator: NERBatchCollator,
-    # ) -> Dict[str, DataLoader]:
-    #
-    #     if is_debug():
-    #         logger.warning(
-    #             "Debug mode detected, setting num_workers=0 for torch dataloader. This allows proper debugging."
-    #         )
-    #         num_workers = 0
-    #     else:
-    #         num_workers = 25
-    #
-    #     dataloaders = {}
-    #     for split_type, split_dataset in datasets.items():
-    #
-    #         dataloaders[split_type] = DataLoader(
-    #             dataset=split_dataset,
-    #             collate_fn=batch_collator,
-    #             shuffle=True if split_type == "train" else False,
-    #             num_workers=num_workers,
-    #             # drop_last=True,
-    #             **self.training_params["data_loading"],
-    #         )
-    #
-    #     return dataloaders
 
     def _init_model_loggers(self) -> Union[List, None]:
         store_context = self.get_store_context()
@@ -208,69 +180,6 @@ class NERPreTraining(Task):
                 if isinstance(train_logger, pl.loggers.wandb.WandbLogger):
                     train_logger.experiment.config.update(hyperparameter_to_be_logged)
 
-    # def _init_model_callbacks(self) -> List:
-    #     callbacks = [
-    #         ProgressBar(),
-    #         LearningRateMonitor(logging_interval="step"),
-    #         ExceptionHandling(),
-    #     ]
-    #
-    #     store_context = self.get_store_context()
-    #     if store_context:
-    #         run_dir = store_context.run_dir
-    #
-    #         # if not self.is_subprocess:
-    #
-    #         if self.gpu_scaling == "deepspeed":
-    #             model_checkpoint = ModelCheckpoint(
-    #                 monitor="epoch",
-    #                 every_n_epochs=1,
-    #                 dirpath=os.path.join(run_dir, "models"),
-    #                 verbose=True,
-    #                 save_last=True,
-    #                 save_on_train_epoch_end=True,
-    #                 save_top_k=-1,
-    #                 save_weights_only=True,
-    #             )
-    #         else:
-    #             model_checkpoint = ModelCheckpoint(
-    #                 monitor=self.training_params["callbacks"].monitor_var,
-    #                 dirpath=os.path.join(run_dir, "models"),
-    #                 filename="best_model",
-    #                 save_top_k=self.training_params["callbacks"].save_top_k,
-    #                 verbose=True,
-    #                 save_last=True,
-    #                 mode=self.training_params["callbacks"].monitor_var_mode,
-    #             )
-    #         model_checkpoint.FILE_EXTENSION = ""  # handled by fluidml file store
-    #         callbacks.append(model_checkpoint)
-    #
-    #         if self.checkpointing_time_interval:
-    #             model_checkpoint_time = ModelCheckpoint(
-    #                 monitor=self.training_params["callbacks"].monitor_var,
-    #                 dirpath=os.path.join(run_dir, "models"),
-    #                 filename="time_ckpt",
-    #                 save_top_k=1,
-    #                 verbose=True,
-    #                 save_last=True,
-    #                 mode=self.training_params["callbacks"].monitor_var_mode,
-    #                 train_time_interval=self.checkpointing_time_interval,
-    #             )
-    #             model_checkpoint_time.FILE_EXTENSION = ""
-    #             callbacks.append(model_checkpoint_time)
-    #
-    #     if self.training_params["callbacks"].apply_early_stopping:
-    #         if not self.is_subprocess:
-    #             callbacks.append(
-    #                 EarlyStopping(
-    #                     monitor=self.training_params["callbacks"].monitor_var,
-    #                     mode=self.training_params["callbacks"].monitor_var_mode,
-    #                     patience=self.training_params["callbacks"].patience,
-    #                 )
-    #             )
-    #
-    #     return callbacks
-
     @log_to_file
     def run(self, corpus_tokenised: NERCorpus):
         if isinstance(corpus_tokenised, Dict):
@@ -295,11 +204,6 @@ class NERPreTraining(Task):
                     del c.train[index]
                     i += 1
             logger.info(f"Deleted {i} occurences exceeding the max input length of {max_len}.")
-            # a = []
-            # for c in corpus:
-            #     for i, sentence in enumerate(c.train):
-            #         a.append(len(sentence.input_tokens))
-            # print(a)
         else:
             corpus = corpus_tokenised
             entity_separator_token = corpus[0].entity_separator_token
@@ -307,17 +211,6 @@ class NERPreTraining(Task):
 
         set_seeds(self.seed)
 
-        # this disables the warning that appears when using bloom, opt, and RedPajama (and others?)
-        # see here:
-        #   https://stackoverflow.com/questions/62691279/how-to-disable-tokenizers-parallelism-true-false-warning
-        # if (
-        #     "bloom" in self.model_params["model_name"]
-        #     or "RedPajama" in self.model_params["model_name"]
-        #     or "opt" in self.model_params["model_name"]
-        #     or "gpt-2" in self.model_params["model_name"]
-        #     or "falcon" in self.model_params["model_name"]
-        #     or self.model_params["llama"]
-        # ):
         os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
         hf_token = None
@@ -346,7 +239,7 @@ class NERPreTraining(Task):
                 }
             )
 
-        if self.model_params["llama"]:
+        if self.model_params["llama"] or "Llama-2" in self.model_params["model_name"]:
             tokeniser.add_special_tokens({"pad_token": "<PAD>"})
             pad_token_id = tokeniser.pad_token_id
         elif "RedPajama" in self.model_params["model_name"]:
@@ -369,9 +262,9 @@ class NERPreTraining(Task):
         dataloaders = init_torch_dataloaders(
             datasets=datasets, batch_collator=batch_collator, logger=logger, **self.training_params["data_loading"]
         )
-        # dataloaders = self._init_torch_dataloaders(datasets, batch_collator)
+
         loggers = self._init_model_loggers()
-        # callbacks = self._init_model_callbacks()
+
         if self.get_store_context():
             callbacks = init_model_callbacks(
                 run_dir=self.get_store_context().run_dir,
@@ -391,41 +284,6 @@ class NERPreTraining(Task):
         for c in corpus:
             entity_set.update(c.entity_set)
 
-        # if self.informed_generation:
-        #     logits_processor = LogitsProcessorList()
-        #     combine_token = (
-        #         self.unique_config["Tokenisation"].get("combine_token", "\n")
-        #         if "Tokenisation" in self.unique_config
-        #         else "\n"
-        #     )
-        #     entity_type_tokens = sorted(list(corpus.entity_set))
-        #
-        #     vocab_size = tokeniser.vocab_size
-        #     if "bloom" in tokeniser.name_or_path:
-        #         logger.debug("'Bloom' tokeniser chosen, adding 200 to vocab size for logits processor.")
-        #         logger.debug("See: https://huggingface.co/bigscience/bloom-560m/discussions/43")
-        #         vocab_size += 200
-        #     elif "RedPajama" in tokeniser.name_or_path:
-        #         logger.debug("'RedPajama' tokeniser chosen, adding 178 to vocab size for logits processor.")
-        #         vocab_size += 178
-        #     elif self.model_params["llama"] or "falcon" in tokeniser.name_or_path:
-        #         vocab_size = len(tokeniser)
-        #
-        #     logits_processor.append(
-        #         InformedNERDecoderLogitsProcessor(
-        #             entity_type_tokens=entity_type_tokens,
-        #             vocab_size=vocab_size,
-        #             tokeniser=tokeniser,
-        #             combine_token=combine_token,
-        #             entity_separator_token=entity_separator_token,
-        #             type_content_separator_token=type_content_separator_token,
-        #             batch_size=self.training_params["data_loading"]["batch_size"],
-        #             leading_space=not self.model_params["llama"],
-        #         )
-        #     )
-        # else:
-        #     logits_processor = None
-
         if self.resource.cuda:
             accelerator = "gpu"
             gpus = self.resource.device
@@ -440,25 +298,12 @@ class NERPreTraining(Task):
                     )
                 else:
                     strategy = "auto"
-                # if "bloom" in self.model_params["model_name"]:
-                #     strategy = FSDPStrategy(cpu_offload=True, activation_checkpointing=BloomBlock)
-                # elif "opt" in self.model_params["model_name"]:
-                #     strategy = FSDPStrategy(cpu_offload=True, activation_checkpointing=OPTDecoderLayer)
-                # else:
-                #     strategy = FSDPStrategy(cpu_offload=False)
-                # strategy = DeepSpeedStrategy(
-                #     stage=3,
-                #     offload_optimizer=True,
-                #     offload_parameters=True,
-                # )
             else:
                 strategy = "auto"
         else:
             accelerator = "cpu"
             gpus = "auto"
             strategy = "auto"
-
-        # max_epochs = self.training_params["trainer"].pop("max_epochs")
 
         trainer = pl.Trainer(
             num_sanity_val_steps=0,
@@ -494,7 +339,6 @@ class NERPreTraining(Task):
             "generation_params": self.generation_params,
             "learning_rate_scheduler_inputs": learning_rate_scheduler_inputs,
             "tokeniser": tokeniser,
-            # logits_processor=logits_processor,
             "is_multigpu": True if strategy != "auto" else False,
             "is_mainprocess": not self.is_subprocess,
             "entity_set": entity_set,

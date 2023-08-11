@@ -74,16 +74,18 @@ Parsing:
 
 Tokenisation:
 #  tokeniser_name: &modelname "tiiuae/falcon-7b"
-#  tokeniser_name: &modelname "/cephfs/llama_weights/huggingface_converted/13B"
+#  tokeniser_name: &modelname "gpt2-xl"
+#  tokeniser_name: &modelname "/cephfs/llama_weights/huggingface_converted/7B"
 #  tokeniser_name: &modelname "/root/llama_weights/huggingface_converted/7B"
 #  tokeniser_name: &modelname "/mnt/cephfs/users/deusser/llama_weights/huggingface_converted/7B"
 #  tokeniser_name: &modelname "/cluster/public/llama_weights/huggingface_converted/7B"
 #  tokeniser_name: &modelname "/mnt/cephfs/users/deusser/llama_weights/huggingface_converted/13B"
-  tokeniser_name: &modelname "togethercomputer/RedPajama-INCITE-Base-3B-v1"
-  llama: &llama false
+#  tokeniser_name: &modelname "togethercomputer/RedPajama-INCITE-Base-3B-v1"
+  tokeniser_name: &modelname "/cephfs/llama_weights/huggingface_converted/13B"
+  llama: &llama true
   special_tokens: null
-  combine_token: "\n"
-#  combine_token: "<s>"
+  #  combine_token: "\n"
+  combine_token: "<s>"
   add_leading_space: false
 
 ################
@@ -101,7 +103,7 @@ PreTraining:
       model_name: *modelname
       llama: *llama
       load_in_8bit: false
-      lora: false
+      lora: true
       lora_config:
         r: 8
         lora_alpha: 32
@@ -120,17 +122,17 @@ PreTraining:
         lr: 1.e-5
         weight_decay: 0.01
 
-#      lr_scheduler:
-#        type_: 'lin_warmup'
-#        interval: 'step'
-#        lr_warmup: 0.1
+      #      lr_scheduler:
+      #        type_: 'lin_warmup'
+      #        interval: 'step'
+      #        lr_warmup: 0.1
 
       trainer:
         max_epochs: 15
-        accumulate_grad_batches: 16 # [2, 4]  # 4
+        accumulate_grad_batches: 64 # [2, 4]  # 4
         gradient_clip_val: 1  # [1, 10]  # 10
         precision: 32
-#        precision: 16
+        #        precision: 16
         val_check_interval: 1. # 0.25  # 1.
 
       callbacks:
@@ -141,8 +143,8 @@ PreTraining:
         save_top_k: 1
 
       data_loading:
-        batch_size: 4
-#        drop_last: false
+        batch_size: 1
+        #        drop_last: false
         combine_train_valid: false
         validate_on_test_set: false
 
@@ -162,7 +164,7 @@ Training:
     model_name: *modelname
     llama: *llama
     load_in_8bit: false
-    lora: false
+    lora: true
     lora_config:
       r: 8
       lora_alpha: 32
@@ -181,17 +183,17 @@ Training:
       lr: 1.e-5
       weight_decay: 0.01
 
-#      lr_scheduler:
-#        type_: 'lin_warmup'
-#        interval: 'step'
-#        lr_warmup: 0.1
+    #      lr_scheduler:
+    #        type_: 'lin_warmup'
+    #        interval: 'step'
+    #        lr_warmup: 0.1
 
     trainer:
       max_epochs: 15
-      accumulate_grad_batches: 4 # [2, 4]  # 4
+      accumulate_grad_batches: 16 # [2, 4]  # 4
       gradient_clip_val: 1  # [1, 10]  # 10
       precision: 32
-#        precision: 16
+      #        precision: 16
       val_check_interval: 1. # 0.25  # 1.
 
     callbacks:
@@ -203,14 +205,14 @@ Training:
 
     metrics:
       nerf1: null
-#        bleu:
-#          n_gram: 4
-#          smooth: false
-#          weights: null
+    #        bleu:
+    #          n_gram: 4
+    #          smooth: false
+    #          weights: null
 
     data_loading:
-      batch_size: 4
-#        drop_last: false
+      batch_size: 1
+      #        drop_last: false
       combine_train_valid: true
       validate_on_test_set: true
 

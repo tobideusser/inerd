@@ -10,8 +10,6 @@ class NERBatchCollator:
         self.pad_token_id = pad_token_id
 
     def __call__(self, batch: Tuple[Sentence, ...]) -> Dict[str, Any]:
-        # max_length_tokens = max([sentence.num_tokens for sentence in batch])
-        # max_length_entity_string_tokens = max([len(sentence.entity_string_token_ids) for sentence in batch])
         max_length_input_ids = max([sentence.num_input_ids for sentence in batch])
         max_length_prompt_ids = max([sentence.prompt_end_in_input_ids for sentence in batch])
         prompt_ids = [sentence.input_ids[: sentence.prompt_end_in_input_ids] for sentence in batch]

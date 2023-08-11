@@ -11,12 +11,12 @@ from fluidml.visualization import visualize_graph_in_console
 
 from inerd import project_path
 from inerd.tasks import Parsing, Tokenisation, NERTraining, NEREvaluation, NERPreTraining
+from inerd.utils import get_balanced_devices, is_debug
 from inerd.utils.fluid_helper import (
     configure_logging,
     MyLocalFileStore,
     TaskResource,
 )
-from inerd.utils import get_balanced_devices, is_debug
 
 logger = logging.getLogger(__name__)
 
@@ -58,14 +58,15 @@ def parse_args() -> argparse.Namespace:
         "--cuda-group",
         default=None,
         type=int,
-        help="How to group multiple GPU's, e.g. `--cuda-group 2` groups in pair of twos",
+        help="How to group multiple GPU's, e.g. `--cuda-group 2` groups in pairs of twos",
     )
     parser.add_argument("--deepspeed", action="store_true", help="Use deepspeed.")
     parser.add_argument("--fsdp", action="store_true", help="Use fsdp.")
     parser.add_argument("--pre-training", action="store_true", help="Execute only pre-training.")
     parser.add_argument("--no-pre-training", action="store_true", help="Execute no pre-training.")
+    parser.add_argument("--no-zeroshot", action="store_true", help="Do not do zero-shot during before training.")
     parser.add_argument("--use-cuda", action="store_true", help="Use cuda.")
-    parser.add_argument("--max-split-size", type=int, default=None, help="Max. split size for cuda processes.")
+    # parser.add_argument("--max-split-size", type=int, default=None, help="Max. split size for cuda processes.")
     parser.add_argument("--warm-start", action="store_true", help="Tries to warm start training.")
     parser.add_argument("--num-workers", type=int, default=1, help="Number of multiprocessing workers.")
     parser.add_argument(
@@ -73,7 +74,7 @@ def parse_args() -> argparse.Namespace:
         type=str,
         nargs="+",
         default=None,
-        help="Task or tasks to force execute. " + " registers successor tasks also for force execution."
+        help="Task or tasks to force execute.  '+'  registers successor tasks also for force execution."
         "E.g. --force ModelTraining+",
     )
     parser.add_argument(
@@ -148,6 +149,7 @@ def main():
     num_workers = args.num_workers  # 1
     force = args.force  # "ModelTraining+"
     cuda_ids = args.cuda_ids  # [1]  # [0, 1]
+    no_zero_shot = args.no_zeroshot
     if cuda_ids is not None:
         use_cuda = True
     else:
@@ -172,8 +174,8 @@ def main():
     #     os.environ["CUDA_VISIBLE_DEVICES"] = ",".join([str(cuda_id) for cuda_id in cuda_ids])
     #     cuda_ids = list(range(len(cuda_ids)))
 
-    if args.max_split_size:
-        os.environ["PYTORCH_CUDA_ALLOC_CONF"] = f"max_split_size_mb:{args.max_split_size}"
+    # if args.max_split_size:
+    #     os.environ["PYTORCH_CUDA_ALLOC_CONF"] = f"max_split_size_mb:{args.max_split_size}"
 
     log_dir = os.path.join(base_dir, "logging")
     os.makedirs(log_dir, exist_ok=True)
@@ -219,6 +221,7 @@ def main():
             additional_kwargs={
                 "gpu_scaling": gpu_scaling,
                 "warm_start": warm_start,
+                "no_zero_shot": no_zero_shot,
                 "pre_training": not no_pre_training,
                 "checkpointing_time_interval": checkpointing_time_interval.total_seconds()
                 if checkpointing_time_interval is not None

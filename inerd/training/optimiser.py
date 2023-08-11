@@ -21,7 +21,6 @@ class Optimiser:
     def from_config(
         cls, type_: str, multigpu: bool = False, load_in_8bit: bool = False, *args, **kwargs
     ) -> Union[torch.optim.Optimizer, deepspeed.ops.adam.FusedAdam, deepspeed.ops.adam.DeepSpeedCPUAdam]:
-
         if load_in_8bit:
             type_ = type_ + "8bit"
 
@@ -34,10 +33,8 @@ class Optimiser:
                 adamw_mode = False
             else:
                 raise KeyError("Optimiser must be 'adam' or 'adamw' to work with DeepSpeedCPUAdam")
-            # return deepspeed.ops.adam.FusedAdam(**kwargs)
             return deepspeed.ops.adam.DeepSpeedCPUAdam(model_params=model_params, adamw_mode=adamw_mode, **kwargs)
         else:
-
             try:
                 callable_path = OPTIMISERS[type_]
             except KeyError:

@@ -5,7 +5,6 @@ from typing import Dict, Any, List, Union, Set
 import numpy as np
 from torchmetrics import BLEUScore
 
-from inerd.data_classes import Entity
 from inerd.utils import entity_string_to_entity_dataclass
 
 

@@ -3,11 +3,10 @@ from copy import deepcopy
 from typing import List, Tuple
 
 import torch
-from torch import LongTensor, FloatTensor, BoolTensor
+from torch import LongTensor, FloatTensor
 from transformers import LogitsProcessor, PreTrainedTokenizer
 
 from inerd.utils import rindex
-
 
 logger = logging.getLogger(__name__)
 
@@ -92,35 +91,24 @@ class InformedNERDecoderLogitsProcessor(LogitsProcessor):
         for token_ids in self.entity_type_token_ids:
             for token_id in token_ids:
                 self.mask_rule1[token_id] = False
-            # self.mask_rule1[token_ids[0][0]] = False
-            # self.mask_rule1[token_ids[1][0]] = False
         self.mask_rule1[tokeniser.eos_token_id] = False
 
         self.mask_rule3 = torch.ones(self.vocab_size, dtype=torch.bool)
         for token_ids in self.type_content_separator_token_ids:
             for token_id in token_ids:
                 self.mask_rule3[token_id] = False
-        # self.mask_rule3[self.type_content_separator_token_ids[0][0]] = False
-        # self.mask_rule3[self.type_content_separator_token_ids[1][0]] = False
 
         # this mask is incomplete, as it also requires the previous token id
         self.mask_rule4b_incomplete = torch.ones(self.vocab_size, dtype=torch.bool)
         for token_ids in self.entity_separator_token_ids:
             for token_id in token_ids:
                 self.mask_rule4b_incomplete[token_id] = False
-        # self.mask_rule4b_incomplete[self.entity_separator_token_ids[0][0]] = False
-        # self.mask_rule4b_incomplete[self.entity_separator_token_ids[1][0]] = False
-
-        # to store the position of the previously predicted token
-        # self.rule4_memory = [[-1]] * batch_size
 
         self.rule4_next_token_memory = [[-1]] * batch_size
         common_special_characters = [".", ",", "'", '"', "-", "#", "$", "%", "&", "(", ")", "*", "+", "/", "!", "?"]
         self.common_special_characters_ids = [
             char[0] for char in self.tokeniser(common_special_characters, add_special_tokens=False).input_ids
         ]
-
-        # self.rule4_edge_case_flag = [False] * batch_size
 
     def _find_token_id_in_entity_type_list(self, token_id: int) -> Tuple[int, int, int]:
         for i, entity_type in enumerate(self.entity_type_token_ids):
@@ -167,28 +155,6 @@ class InformedNERDecoderLogitsProcessor(LogitsProcessor):
                     f"Sentence:\n{self.tokeniser.decode(prompt_ids[i])}"
                     f"Token ids:\n{prompt_ids[i]}"
                 )
-            # try:
-            #     position_in_input_ids = input_ids_for_each_object.index(self.combine_token_ids[1][0])
-            # except ValueError:
-            #     try:
-            #         position_in_input_ids = input_ids_for_each_object.index(self.combine_token_ids[0][0])
-            #     except ValueError:
-            #         try:
-            #             position_in_input_ids = input_ids_for_each_object.index(self.combine_token_ids[2][0])
-            #         except ValueError:
-            #             logger.error(
-            #                 f"No combine token id found in the input!\n"
-            #                 f"Sentence:\n{self.tokeniser.decode(prompt_ids[i])}"
-            #                 f"Token ids:\n{prompt_ids[i]}"
-            #             )
-            #             raise ValueError
-            #         except IndexError:
-            #             logger.error(
-            #                 f"No combine token id found in the input! Maybe this is the special case for '. \\n'?\n"
-            #                 f"Sentence:\n{self.tokeniser.decode(prompt_ids[i])}"
-            #                 f"Token ids:\n{prompt_ids[i]}"
-            #             )
-            #             raise IndexError
             prompt_ids[i] = [
                 prompt_id
                 for prompt_id in prompt_ids[i][:position_in_input_ids]
@@ -240,7 +206,6 @@ class InformedNERDecoderLogitsProcessor(LogitsProcessor):
         """
 
         if token == "" or token == " ":
-
             self.rule4_next_token_memory[batch_position] = [-1]
 
         else:
@@ -362,7 +327,6 @@ class InformedNERDecoderLogitsProcessor(LogitsProcessor):
                     #   predicted.
 
                     if predicted_token_without_masking != self.type_content_separator_token:
-
                         scores[i].masked_fill_(mask=self.mask_rule3.to(device), value=self.mask_value)
             else:
                 prompt_ids, prompt_ids_with_leading_space = self._get_prompt_ids(input_ids=input_ids)
@@ -420,7 +384,6 @@ class InformedNERDecoderLogitsProcessor(LogitsProcessor):
 
                         else:
                             if self.rule4_next_token_memory[i] != [-1]:
-
                                 # deepcopy "incomplete" mask for rule 4b
                                 mask_rule4b = deepcopy(self.mask_rule4b_incomplete)
 
@@ -436,13 +399,4 @@ class InformedNERDecoderLogitsProcessor(LogitsProcessor):
                         # update the rule4 memory based upon the result of this step
                         self._update_rule4_memory(text=prompt_decoded, token=predicted_token, batch_position=i)
 
-            # predicted_token_id = int(torch.argmax(scores[i]))
-            # predicted_token = self.tokeniser.decode(predicted_token_id)
-            # if ("," in predicted_token or "." in predicted_token) and self.tokeniser.decode(input_ids[i])[-1] == ":":
-            #     logger.warning(
-            #         f". or , in predicted_token\n"
-            #         f"input_ids: {self.tokeniser.decode(input_ids[i])}\n"
-            #         f"predicted_token: {predicted_token}"
-            #     )
-            #     print("WHAT?! DEBUG HERE! line 317")
         return scores

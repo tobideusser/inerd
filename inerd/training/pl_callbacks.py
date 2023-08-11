@@ -1,10 +1,8 @@
 import logging
-from typing import Dict, Any
 
 import markdown
 import pytorch_lightning as pl
 import wandb
-from fluidml import Task
 from pytorch_lightning import Callback
 from pytorch_lightning.callbacks import TQDMProgressBar
 from pytorch_lightning.loggers import TensorBoardLogger
